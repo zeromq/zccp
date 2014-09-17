@@ -24,7 +24,7 @@
 
     <message name = "subscribe">
         Client subscribes to some set of events
-        <field name = "header" type = "string">Header, for matching</field>
+        <field name = "expression" type = "string">Regular expression</field>
     </message>
 
     <message name = "publish">

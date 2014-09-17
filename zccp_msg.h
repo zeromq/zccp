@@ -26,7 +26,7 @@
     READY - Server accepts client
 
     SUBSCRIBE - Client subscribes to some set of events
-        header              string      Header, for matching
+        expression          string      Regular expression
 
     PUBLISH - Client publishes an event, or server delivers to client
         header              string      Header, for matching
@@ -110,7 +110,7 @@ zmsg_t *
 //  Encode the SUBSCRIBE 
 zmsg_t *
     zccp_msg_encode_subscribe (
-        const char *header);
+        const char *expression);
 
 //  Encode the PUBLISH 
 zmsg_t *
@@ -151,7 +151,7 @@ int
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.
 int
     zccp_msg_send_subscribe (void *output,
-        const char *header);
+        const char *expression);
     
 //  Send the PUBLISH to the output in one step
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.
@@ -206,6 +206,12 @@ const char *
     zccp_msg_identifier (zccp_msg_t *self);
 void
     zccp_msg_set_identifier (zccp_msg_t *self, const char *format, ...);
+
+//  Get/set the expression field
+const char *
+    zccp_msg_expression (zccp_msg_t *self);
+void
+    zccp_msg_set_expression (zccp_msg_t *self, const char *format, ...);
 
 //  Get/set the header field
 const char *

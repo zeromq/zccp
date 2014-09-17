@@ -115,7 +115,7 @@ static int
 static void
     register_new_client (client_t *self);
 static void
-    subscribe_client_to_events (client_t *self);
+    store_new_subscription (client_t *self);
 static void
     forward_to_subscribers (client_t *self);
 
@@ -481,10 +481,10 @@ s_client_execute (s_client_t *self, int event)
             case connected_state:
                 if (self->event == subscribe_event) {
                     if (!self->exception) {
-                        //  subscribe client to events
+                        //  store new subscription
                         if (self->server->verbose)
-                            zsys_debug ("%s:         $ subscribe client to events", self->log_prefix);
-                        subscribe_client_to_events (&self->client);
+                            zsys_debug ("%s:         $ store new subscription", self->log_prefix);
+                        store_new_subscription (&self->client);
                     }
                 }
                 else

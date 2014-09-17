@@ -17,7 +17,7 @@
 
     <state name = "connected" inherit = "external">
         <event name = "SUBSCRIBE">
-            <action name = "subscribe client to events" />
+            <action name = "store new subscription" />
         </event>
         <event name = "PUBLISH">
             <action name = "forward to subscribers" />

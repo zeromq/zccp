@@ -34,6 +34,7 @@ struct _zccp_msg_t {
     byte *needle;                       //  Read/write pointer for serialization
     byte *ceiling;                      //  Valid upper limit for read pointer
     char *identifier;                   //  Client identifier
+    char *expression;                   //  Regular expression
     char *header;                       //  Header, for matching
     zchunk_t *content;                  //  Event content
     char *method;                       //  Requested method
@@ -201,6 +202,7 @@ zccp_msg_destroy (zccp_msg_t **self_p)
         //  Free class properties
         zframe_destroy (&self->routing_id);
         free (self->identifier);
+        free (self->expression);
         free (self->header);
         zchunk_destroy (&self->content);
         free (self->method);
@@ -251,7 +253,7 @@ zccp_msg_decode (zmsg_t **msg_p)
             break;
 
         case ZCCP_MSG_SUBSCRIBE:
-            GET_STRING (self->header);
+            GET_STRING (self->expression);
             break;
 
         case ZCCP_MSG_PUBLISH:
@@ -338,10 +340,10 @@ zccp_msg_encode (zccp_msg_t **self_p)
             break;
             
         case ZCCP_MSG_SUBSCRIBE:
-            //  header is a string with 1-byte length
+            //  expression is a string with 1-byte length
             frame_size++;       //  Size is one octet
-            if (self->header)
-                frame_size += strlen (self->header);
+            if (self->expression)
+                frame_size += strlen (self->expression);
             break;
             
         case ZCCP_MSG_PUBLISH:
@@ -402,8 +404,8 @@ zccp_msg_encode (zccp_msg_t **self_p)
             break;
 
         case ZCCP_MSG_SUBSCRIBE:
-            if (self->header) {
-                PUT_STRING (self->header);
+            if (self->expression) {
+                PUT_STRING (self->expression);
             }
             else
                 PUT_NUMBER1 (0);    //  Empty string
@@ -603,10 +605,10 @@ zccp_msg_encode_ready (
 
 zmsg_t * 
 zccp_msg_encode_subscribe (
-    const char *header)
+    const char *expression)
 {
     zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_SUBSCRIBE);
-    zccp_msg_set_header (self, header);
+    zccp_msg_set_expression (self, expression);
     return zccp_msg_encode (&self);
 }
 
@@ -703,10 +705,10 @@ zccp_msg_send_ready (
 int
 zccp_msg_send_subscribe (
     void *output,
-    const char *header)
+    const char *expression)
 {
     zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_SUBSCRIBE);
-    zccp_msg_set_header (self, header);
+    zccp_msg_set_expression (self, expression);
     return zccp_msg_send (&self, output);
 }
 
@@ -795,7 +797,7 @@ zccp_msg_dup (zccp_msg_t *self)
             break;
 
         case ZCCP_MSG_SUBSCRIBE:
-            copy->header = self->header? strdup (self->header): NULL;
+            copy->expression = self->expression? strdup (self->expression): NULL;
             break;
 
         case ZCCP_MSG_PUBLISH:
@@ -843,10 +845,10 @@ zccp_msg_print (zccp_msg_t *self)
             
         case ZCCP_MSG_SUBSCRIBE:
             zsys_debug ("ZCCP_MSG_SUBSCRIBE:");
-            if (self->header)
-                zsys_debug ("    header='%s'", self->header);
+            if (self->expression)
+                zsys_debug ("    expression='%s'", self->expression);
             else
-                zsys_debug ("    header=");
+                zsys_debug ("    expression=");
             break;
             
         case ZCCP_MSG_PUBLISH:
@@ -968,6 +970,29 @@ zccp_msg_set_identifier (zccp_msg_t *self, const char *format, ...)
     va_start (argptr, format);
     free (self->identifier);
     self->identifier = zsys_vprintf (format, argptr);
+    va_end (argptr);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Get/set the expression field
+
+const char *
+zccp_msg_expression (zccp_msg_t *self)
+{
+    assert (self);
+    return self->expression;
+}
+
+void
+zccp_msg_set_expression (zccp_msg_t *self, const char *format, ...)
+{
+    //  Format expression from provided arguments
+    assert (self);
+    va_list argptr;
+    va_start (argptr, format);
+    free (self->expression);
+    self->expression = zsys_vprintf (format, argptr);
     va_end (argptr);
 }
 
@@ -1141,7 +1166,7 @@ zccp_msg_test (bool verbose)
     assert (copy);
     zccp_msg_destroy (&copy);
 
-    zccp_msg_set_header (self, "Life is short but Now lasts for ever");
+    zccp_msg_set_expression (self, "Life is short but Now lasts for ever");
     //  Send twice from same object
     zccp_msg_send_again (self, output);
     zccp_msg_send (&self, output);
@@ -1151,7 +1176,7 @@ zccp_msg_test (bool verbose)
         assert (self);
         assert (zccp_msg_routing_id (self));
         
-        assert (streq (zccp_msg_header (self), "Life is short but Now lasts for ever"));
+        assert (streq (zccp_msg_expression (self), "Life is short but Now lasts for ever"));
         zccp_msg_destroy (&self);
     }
     self = zccp_msg_new (ZCCP_MSG_PUBLISH);

@@ -31,8 +31,7 @@ struct _server_t {
     zsock_t *pipe;              //  Actor pipe back to caller
     zconfig_t *config;          //  Current loaded configuration
     
-    //  Add any properties you need here
-    zlist_t *subscribers;       //  List of known subscribers
+    zlist_t *patterns;          //  List of patterns subscribed to
 };
 
 //  ---------------------------------------------------------------------
@@ -47,11 +46,52 @@ struct _client_t {
     zccp_msg_t *reply;          //  Reply to send out, if any
 
     //  These properties are specific for this application
-    
 };
 
 //  Include the generated server engine
 #include "zccp_server_engine.inc"
+
+
+//  This is a simple pattern class
+
+typedef struct {
+    char *expression;           //  Regular expression to match on
+    zrex_t *rex;                //  Expression, compiled as a zrex object
+    zlist_t *clients;           //  All clients that asked for this pattern
+} pattern_t;
+
+static void
+s_pattern_destroy (pattern_t **self_p)
+{
+    assert (self_p);
+    if (*self_p) {
+        pattern_t *self = *self_p;
+        zrex_destroy (&self->rex);
+        zlist_destroy (&self->clients);
+        free (self->expression);
+        free (self);
+        *self_p = NULL;
+    }
+}
+
+static pattern_t *
+s_pattern_new (const char *expression, client_t *client)
+{
+    pattern_t *self = (pattern_t *) zmalloc (sizeof (pattern_t));
+    if (self) {
+        self->rex = zrex_new (expression);
+        if (self->rex)
+            self->expression = strdup (expression);
+        if (self->expression)
+            self->clients = zlist_new ();
+        if (self->clients)
+            zlist_append (self->clients, client);
+        else
+            s_pattern_destroy (&self);
+    }
+    return self;
+}
+
 
 //  Allocate properties and structures for a new server instance.
 //  Return 0 if OK, or -1 if there was an error.
@@ -59,7 +99,8 @@ struct _client_t {
 static int
 server_initialize (server_t *self)
 {
-    self->subscribers = zlist_new ();
+    self->patterns = zlist_new ();
+    zlist_set_destructor (self->patterns, (czmq_destructor *) s_pattern_destroy);
     return 0;
 }
 
@@ -68,7 +109,7 @@ server_initialize (server_t *self)
 static void
 server_terminate (server_t *self)
 {
-    zlist_destroy (&self->subscribers);
+    zlist_destroy (&self->patterns);
 }
 
 //  Process server API method, return reply message if any
@@ -95,7 +136,11 @@ client_initialize (client_t *self)
 static void
 client_terminate (client_t *self)
 {
-    zlist_remove (self->server->subscribers, self);
+    pattern_t *pattern = (pattern_t *) zlist_first (self->server->patterns);
+    while (pattern) {
+        zlist_remove (pattern->clients, self);
+        pattern = (pattern_t *) zlist_next (self->server->patterns);
+    }
 }
 
 
@@ -112,13 +157,32 @@ register_new_client (client_t *self)
 
 
 //  --------------------------------------------------------------------------
-//  subscribe_client_to_events
+//  store_new_subscription
 //
 
 static void
-subscribe_client_to_events (client_t *self)
+store_new_subscription (client_t *self)
 {
-    zlist_append (self->server->subscribers, self);
+    const char *expression = zccp_msg_expression (self->request);
+    pattern_t *pattern = (pattern_t *) zlist_first (self->server->patterns);
+    while (pattern) {
+        if (streq (pattern->expression, expression)) {
+            client_t *client = (client_t *) zlist_first (pattern->clients);
+            while (client) {
+                if (client == self)
+                    break;      //  This client is already on the list
+                client = (client_t *) zlist_next (pattern->clients);
+            }
+            //  Add client, if it's new
+            if (!client)
+                zlist_append (pattern->clients, self);
+            break;
+        }
+        pattern = (pattern_t *) zlist_next (self->server->patterns);
+    }
+    //  Add pattern, if it's new
+    if (!pattern)
+        zlist_append (self->server->patterns, s_pattern_new (expression, self));
 }
 
 
@@ -129,10 +193,17 @@ subscribe_client_to_events (client_t *self)
 static void
 forward_to_subscribers (client_t *self)
 {
-    client_t *client = (client_t *) zlist_first (self->server->subscribers);
-    while (client) {
-        engine_send_event (client, forward_event);
-        client = (client_t *) zlist_next (self->server->subscribers);
+    pattern_t *pattern = (pattern_t *) zlist_first (self->server->patterns);
+    while (pattern) {
+        if (zrex_matches (pattern->rex, zccp_msg_header (self->request))) {
+            client_t *client = (client_t *) zlist_first (pattern->clients);
+            while (client) {
+                if (client != self)
+                    engine_send_event (client, forward_event);
+                client = (client_t *) zlist_next (pattern->clients);
+            }
+        }
+        pattern = (pattern_t *) zlist_next (self->server->patterns);
     }
 }
 
@@ -202,8 +273,8 @@ zccp_server_test (bool verbose)
     assert (zccp_msg_id (message) == ZCCP_MSG_READY);
     zccp_msg_destroy (&message);
     
-    zccp_msg_send_subscribe (client, "*");
-    zccp_msg_send_publish (device, "WARNING!!", NULL);
+    zccp_msg_send_subscribe (client, "H.*O");
+    zccp_msg_send_publish (device, "(HELLO, WORLD)", NULL);
     
     message = zccp_msg_recv (client);
     assert (message);
