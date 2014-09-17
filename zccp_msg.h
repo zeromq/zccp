@@ -23,7 +23,9 @@
     HELLO - Client says hello to server and provides its identifier.
         identifier          string      Client identifier
 
-    READY - Server accepts client
+    GOODBYE - Client says goodbye to server.
+
+    READY - Server confirms client HELLO or GOODBYE
 
     SUBSCRIBE - Client subscribes to some set of notifications
         expression          string      Regular expression
@@ -50,13 +52,14 @@
 
 
 #define ZCCP_MSG_HELLO                      1
-#define ZCCP_MSG_READY                      2
-#define ZCCP_MSG_SUBSCRIBE                  3
-#define ZCCP_MSG_PUBLISH                    4
-#define ZCCP_MSG_DELIVER                    5
-#define ZCCP_MSG_REQUEST                    6
-#define ZCCP_MSG_REPLY                      7
-#define ZCCP_MSG_INVALID                    8
+#define ZCCP_MSG_GOODBYE                    2
+#define ZCCP_MSG_READY                      3
+#define ZCCP_MSG_SUBSCRIBE                  4
+#define ZCCP_MSG_PUBLISH                    5
+#define ZCCP_MSG_DELIVER                    6
+#define ZCCP_MSG_REQUEST                    7
+#define ZCCP_MSG_REPLY                      8
+#define ZCCP_MSG_INVALID                    9
 
 #ifdef __cplusplus
 extern "C" {
@@ -108,6 +111,11 @@ zmsg_t *
     zccp_msg_encode_hello (
         const char *identifier);
 
+//  Encode the GOODBYE 
+zmsg_t *
+    zccp_msg_encode_goodbye (
+);
+
 //  Encode the READY 
 zmsg_t *
     zccp_msg_encode_ready (
@@ -154,6 +162,11 @@ zmsg_t *
 int
     zccp_msg_send_hello (void *output,
         const char *identifier);
+    
+//  Send the GOODBYE to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+int
+    zccp_msg_send_goodbye (void *output);
     
 //  Send the READY to the output in one step
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.

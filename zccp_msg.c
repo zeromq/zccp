@@ -251,6 +251,9 @@ zccp_msg_decode (zmsg_t **msg_p)
             GET_STRING (self->identifier);
             break;
 
+        case ZCCP_MSG_GOODBYE:
+            break;
+
         case ZCCP_MSG_READY:
             break;
 
@@ -351,6 +354,9 @@ zccp_msg_encode (zccp_msg_t **self_p)
                 frame_size += strlen (self->identifier);
             break;
             
+        case ZCCP_MSG_GOODBYE:
+            break;
+            
         case ZCCP_MSG_READY:
             break;
             
@@ -428,6 +434,9 @@ zccp_msg_encode (zccp_msg_t **self_p)
             }
             else
                 PUT_NUMBER1 (0);    //  Empty string
+            break;
+
+        case ZCCP_MSG_GOODBYE:
             break;
 
         case ZCCP_MSG_READY:
@@ -641,6 +650,18 @@ zccp_msg_encode_hello (
 
 
 //  --------------------------------------------------------------------------
+//  Encode GOODBYE message
+
+zmsg_t * 
+zccp_msg_encode_goodbye (
+)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_GOODBYE);
+    return zccp_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
 //  Encode READY message
 
 zmsg_t * 
@@ -753,6 +774,18 @@ zccp_msg_send_hello (
 {
     zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_HELLO);
     zccp_msg_set_identifier (self, identifier);
+    return zccp_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the GOODBYE to the socket in one step
+
+int
+zccp_msg_send_goodbye (
+    void *output)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_GOODBYE);
     return zccp_msg_send (&self, output);
 }
 
@@ -882,6 +915,9 @@ zccp_msg_dup (zccp_msg_t *self)
             copy->identifier = self->identifier? strdup (self->identifier): NULL;
             break;
 
+        case ZCCP_MSG_GOODBYE:
+            break;
+
         case ZCCP_MSG_READY:
             break;
 
@@ -932,6 +968,10 @@ zccp_msg_print (zccp_msg_t *self)
                 zsys_debug ("    identifier='%s'", self->identifier);
             else
                 zsys_debug ("    identifier=");
+            break;
+            
+        case ZCCP_MSG_GOODBYE:
+            zsys_debug ("ZCCP_MSG_GOODBYE:");
             break;
             
         case ZCCP_MSG_READY:
@@ -1036,6 +1076,9 @@ zccp_msg_command (zccp_msg_t *self)
     switch (self->id) {
         case ZCCP_MSG_HELLO:
             return ("HELLO");
+            break;
+        case ZCCP_MSG_GOODBYE:
+            return ("GOODBYE");
             break;
         case ZCCP_MSG_READY:
             return ("READY");
@@ -1273,6 +1316,24 @@ zccp_msg_test (bool verbose)
         assert (zccp_msg_routing_id (self));
         
         assert (streq (zccp_msg_identifier (self), "Life is short but Now lasts for ever"));
+        zccp_msg_destroy (&self);
+    }
+    self = zccp_msg_new (ZCCP_MSG_GOODBYE);
+    
+    //  Check that _dup works on empty message
+    copy = zccp_msg_dup (self);
+    assert (copy);
+    zccp_msg_destroy (&copy);
+
+    //  Send twice from same object
+    zccp_msg_send_again (self, output);
+    zccp_msg_send (&self, output);
+
+    for (instance = 0; instance < 2; instance++) {
+        self = zccp_msg_recv (input);
+        assert (self);
+        assert (zccp_msg_routing_id (self));
+        
         zccp_msg_destroy (&self);
     }
     self = zccp_msg_new (ZCCP_MSG_READY);

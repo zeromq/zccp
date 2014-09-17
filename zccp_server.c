@@ -32,8 +32,11 @@ struct _server_t {
     zconfig_t *config;          //  Current loaded configuration
     
     zlist_t *patterns;          //  List of patterns subscribed to
-    zccp_msg_t *request;        //  Message being published to subscribers
-    char *origin;               //  Identifier of client that sent message
+
+    //  When we're forwarding a notification, we need these
+    const char *origin;         //  Identifier of client sender
+    const char *header;         //  Message header
+    zchunk_t *content;          //  Message content
 };
 
 //  ---------------------------------------------------------------------------
@@ -197,8 +200,9 @@ static void
 forward_to_subscribers (client_t *self)
 {
     //  Keep track of the message we're sending out to subscribers
-    self->server->request = self->request;
     self->server->origin = self->identifier;
+    self->server->header = zccp_msg_header (self->request);
+    self->server->content = zccp_msg_content (self->request);
     
     //  Now find all matching subscribers
     pattern_t *pattern = (pattern_t *) zlist_first (self->server->patterns);
@@ -224,12 +228,10 @@ forward_to_subscribers (client_t *self)
 static void
 get_content_to_publish (client_t *self)
 {
-    zchunk_t *content = zchunk_dup (zccp_msg_content (self->server->request));
-    const char *header = zccp_msg_header (self->server->request);
-
+    zchunk_t *content = zchunk_dup (self->server->content);
     zccp_msg_set_origin (self->reply, self->server->origin);
+    zccp_msg_set_header (self->reply, self->server->header);
     zccp_msg_set_content (self->reply, &content);
-    zccp_msg_set_header (self->reply, header);
 }
 
 

@@ -12,6 +12,7 @@
     greeting = C:hello S:ready
     traffic = C:subscribe / C:publish / S:deliver
             / request / reply
+            / C:goodbye S:ready
     </grammar>
     
     <message name = "hello">
@@ -19,8 +20,12 @@
         <field name = "identifier" type = "string">Client identifier</field>
     </message>
 
+    <message name = "goodbye">
+        Client says goodbye to server.
+    </message>
+
     <message name = "ready">
-        Server accepts client
+        Server confirms client HELLO or GOODBYE
     </message>
 
     <message name = "subscribe">

@@ -8,3 +8,6 @@ test $? -ne 0 && exit
 
 #   Build broker, do not run it
 gcc -o zccpd zccpd.c zccp_msg.c zccp_server.c -lczmq -lzmq -g
+
+#   Build shell API, do not run it
+gcc -o zccp_sh zccp_sh.c zccp_msg.c zccp_server.c zccp_client.c -lczmq -lzmq -g

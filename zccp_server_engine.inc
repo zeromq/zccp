@@ -32,7 +32,8 @@ typedef enum {
     publish_event = 3,
     request_event = 4,
     forward_event = 5,
-    expired_event = 6
+    goodbye_event = 6,
+    expired_event = 7
 } event_t;
 
 //  Names for state machine logging and error reporting
@@ -52,6 +53,7 @@ s_event_name [] = {
     "PUBLISH",
     "REQUEST",
     "forward",
+    "GOODBYE",
     "expired"
 };
  
@@ -288,6 +290,9 @@ s_protocol_event (zccp_msg_t *request)
         case ZCCP_MSG_HELLO:
             return hello_event;
             break;
+        case ZCCP_MSG_GOODBYE:
+            return goodbye_event;
+            break;
         case ZCCP_MSG_SUBSCRIBE:
             return subscribe_event;
             break;
@@ -451,6 +456,25 @@ s_client_execute (s_client_t *self, int event)
                         self->state = connected_state;
                 }
                 else
+                if (self->event == goodbye_event) {
+                    if (!self->exception) {
+                        //  send ready
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ send READY",
+                                self->log_prefix);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_READY);
+                        zccp_msg_send (&self->client.reply, self->server->router);
+                        self->client.reply = zccp_msg_new (0);
+                        zccp_msg_set_routing_id (self->client.reply, self->routing_id);
+                    }
+                    if (!self->exception) {
+                        //  terminate
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ terminate", self->log_prefix);
+                        self->next_event = terminate_event;
+                    }
+                }
+                else
                 if (self->event == expired_event) {
                     if (!self->exception) {
                         //  terminate
@@ -531,6 +555,25 @@ s_client_execute (s_client_t *self, int event)
                     }
                 }
                 else
+                if (self->event == goodbye_event) {
+                    if (!self->exception) {
+                        //  send ready
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ send READY",
+                                self->log_prefix);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_READY);
+                        zccp_msg_send (&self->client.reply, self->server->router);
+                        self->client.reply = zccp_msg_new (0);
+                        zccp_msg_set_routing_id (self->client.reply, self->routing_id);
+                    }
+                    if (!self->exception) {
+                        //  terminate
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ terminate", self->log_prefix);
+                        self->next_event = terminate_event;
+                    }
+                }
+                else
                 if (self->event == expired_event) {
                     if (!self->exception) {
                         //  terminate
@@ -561,6 +604,25 @@ s_client_execute (s_client_t *self, int event)
                 break;
 
             case external_state:
+                if (self->event == goodbye_event) {
+                    if (!self->exception) {
+                        //  send ready
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ send READY",
+                                self->log_prefix);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_READY);
+                        zccp_msg_send (&self->client.reply, self->server->router);
+                        self->client.reply = zccp_msg_new (0);
+                        zccp_msg_set_routing_id (self->client.reply, self->routing_id);
+                    }
+                    if (!self->exception) {
+                        //  terminate
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ terminate", self->log_prefix);
+                        self->next_event = terminate_event;
+                    }
+                }
+                else
                 if (self->event == expired_event) {
                     if (!self->exception) {
                         //  terminate
@@ -569,7 +631,7 @@ s_client_execute (s_client_t *self, int event)
                         self->next_event = terminate_event;
                     }
                 }
-                {
+                else {
                     //  Handle unexpected protocol events
                     if (!self->exception) {
                         //  send invalid

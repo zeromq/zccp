@@ -5,42 +5,46 @@ The following ABNF grammar defines the ZeroMQ Command & Control Protocol:
     greeting = C:hello S:ready
     traffic = C:subscribe / C:publish / S:deliver
             / request / reply
+            / C:goodbye S:ready
 
     ;         Client says hello to server and provides its identifier.
     hello           = signature %d1 identifier
     signature       = %xAA %xA10            ; two octets
     identifier      = string                ; Client identifier
 
-    ;         Server accepts client
-    ready           = signature %d2
+    ;         Client says goodbye to server.
+    goodbye         = signature %d2
+
+    ;         Server confirms client HELLO or GOODBYE
+    ready           = signature %d3
 
     ;         Client subscribes to some set of notifications
-    subscribe       = signature %d3 expression
+    subscribe       = signature %d4 expression
     expression      = string                ; Regular expression
 
     ;         Client publishes a notification
-    publish         = signature %d4 header content
+    publish         = signature %d5 header content
     header          = string                ; Header, for matching
     content         = chunk                 ; Content
 
     ;         Server delivers notification to client
-    deliver         = signature %d5 origin header content
+    deliver         = signature %d6 origin header content
     origin          = string                ; A client identifier
     header          = string                ; Header
     content         = chunk                 ; Content
 
     ;         Request some action
-    request         = signature %d6 method content
+    request         = signature %d7 method content
     method          = string                ; Requested method
     content         = chunk                 ; Content
 
     ;         Reply to a command request
-    reply           = signature %d7 status content
+    reply           = signature %d8 status content
     status          = number-2              ; Success/failure status
     content         = chunk                 ; Content
 
     ;         Client sent a message that was not valid at this time
-    invalid         = signature %d8
+    invalid         = signature %d9
 
     ; A chunk has 4-octet length + binary contents
     chunk           = number-4 *OCTET

@@ -37,6 +37,7 @@ zccp_client_new (const char *identifier, const char *server)
     self->dealer = zsock_new (ZMQ_DEALER);
     assert (self->dealer);
     if (zsock_connect (self->dealer, "%s", server) == 0) {
+        zsock_set_rcvtimeo (self->dealer, 2000);
         zccp_msg_send_hello (self->dealer, identifier);
         zccp_msg_t *msg = zccp_msg_recv (self->dealer);
         if (!msg || zccp_msg_id (msg) != ZCCP_MSG_READY)
@@ -60,6 +61,14 @@ zccp_client_destroy (zccp_client_t **self_p)
     assert (self_p);
     if (*self_p) {
         zccp_client_t *self = *self_p;
+
+        //  Handshake GOODBYE to the server just to be sure anything
+        //  we sent does not get lost when we destroy our dealer socket.
+        zsock_set_rcvtimeo (self->dealer, 500);
+        zccp_msg_send_goodbye (self->dealer);
+        zccp_msg_t *msg = zccp_msg_recv (self->dealer);
+        zccp_msg_destroy (&msg);
+        
         zsock_destroy (&self->dealer);
         free (self->type);
         free (self->body);

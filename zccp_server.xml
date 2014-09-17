@@ -32,6 +32,10 @@
     </state>
 
     <state name = "external">
+        <event name = "GOODBYE">
+            <action name = "send" message = "READY" />
+            <action name = "terminate" />
+        </event>
         <!-- All other protocol messages are invalid -->
         <event name = "*">
             <action name = "send" message = "INVALID" />
