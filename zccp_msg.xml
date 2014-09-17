@@ -7,11 +7,10 @@
     signature = "10"
     >
     <grammar>
-    ZCCP = greeting ( traffic / heartbeat )
+    ZCCP = greeting traffic
     
     greeting = C:hello S:ready
     traffic = subscribe / publish / request / reply
-    heartbeat = C:ping S:pong
     </grammar>
     
     <message name = "hello">
