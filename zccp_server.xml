@@ -36,5 +36,9 @@
             <action name = "send" message = "INVALID" />
             <action name = "terminate" />
         </event>
+        <!-- This built-in event hits on a client timeout -->
+        <event name = "expired">
+            <action name = "terminate" />
+        </event>
    </state>
 </class>
