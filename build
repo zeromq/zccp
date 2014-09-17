@@ -1,4 +1,4 @@
 gsl -q *.xml
 rm -f core
-gcc -o zccpd zccp*.c -lczmq -lzmq -g
+gcc -o zccpd zccpd.c zccp_msg.c zccp_server.c -lczmq -lzmq -g
 test $? -eq 0 && ./zccpd
