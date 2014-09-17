@@ -23,26 +23,33 @@
     </message>
 
     <message name = "subscribe">
-        Client subscribes to some set of events
+        Client subscribes to some set of notifications
         <field name = "expression" type = "string">Regular expression</field>
     </message>
 
     <message name = "publish">
-        Client publishes an event, or server delivers to client
+        Client publishes a notification 
         <field name = "header" type = "string">Header, for matching</field>
-        <field name = "content" type = "chunk">Event content</field>
+        <field name = "content" type = "chunk">Content</field>
+    </message>
+
+    <message name = "deliver">
+        Server delivers notification to client
+        <field name = "origin" type = "string">A client identifier</field>
+        <field name = "header" type = "string">Header</field>
+        <field name = "content" type = "chunk">Content</field>
     </message>
 
     <message name = "request">
         Request some action
         <field name = "method" type = "string">Requested method</field>
-        <field name = "content" type = "chunk">Event content</field>
+        <field name = "content" type = "chunk">Content</field>
     </message>
 
     <message name = "reply">
         Reply to a command request
         <field name = "status" type = "number" size = "2">Success/failure status</field>
-        <field name = "content" type = "chunk">Event content</field>
+        <field name = "content" type = "chunk">Content</field>
     </message>
     
     <message name = "invalid">

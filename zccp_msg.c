@@ -36,7 +36,8 @@ struct _zccp_msg_t {
     char *identifier;                   //  Client identifier
     char *expression;                   //  Regular expression
     char *header;                       //  Header, for matching
-    zchunk_t *content;                  //  Event content
+    zchunk_t *content;                  //  Content
+    char *origin;                       //  A client identifier
     char *method;                       //  Requested method
     uint16_t status;                    //  Success/failure status
 };
@@ -205,6 +206,7 @@ zccp_msg_destroy (zccp_msg_t **self_p)
         free (self->expression);
         free (self->header);
         zchunk_destroy (&self->content);
+        free (self->origin);
         free (self->method);
 
         //  Free object itself
@@ -257,6 +259,19 @@ zccp_msg_decode (zmsg_t **msg_p)
             break;
 
         case ZCCP_MSG_PUBLISH:
+            GET_STRING (self->header);
+            {
+                size_t chunk_size;
+                GET_NUMBER4 (chunk_size);
+                if (self->needle + chunk_size > (self->ceiling))
+                    goto malformed;
+                self->content = zchunk_new (self->needle, chunk_size);
+                self->needle += chunk_size;
+            }
+            break;
+
+        case ZCCP_MSG_DELIVER:
+            GET_STRING (self->origin);
             GET_STRING (self->header);
             {
                 size_t chunk_size;
@@ -357,6 +372,21 @@ zccp_msg_encode (zccp_msg_t **self_p)
                 frame_size += zchunk_size (self->content);
             break;
             
+        case ZCCP_MSG_DELIVER:
+            //  origin is a string with 1-byte length
+            frame_size++;       //  Size is one octet
+            if (self->origin)
+                frame_size += strlen (self->origin);
+            //  header is a string with 1-byte length
+            frame_size++;       //  Size is one octet
+            if (self->header)
+                frame_size += strlen (self->header);
+            //  content is a chunk with 4-byte length
+            frame_size += 4;
+            if (self->content)
+                frame_size += zchunk_size (self->content);
+            break;
+            
         case ZCCP_MSG_REQUEST:
             //  method is a string with 1-byte length
             frame_size++;       //  Size is one octet
@@ -412,6 +442,28 @@ zccp_msg_encode (zccp_msg_t **self_p)
             break;
 
         case ZCCP_MSG_PUBLISH:
+            if (self->header) {
+                PUT_STRING (self->header);
+            }
+            else
+                PUT_NUMBER1 (0);    //  Empty string
+            if (self->content) {
+                PUT_NUMBER4 (zchunk_size (self->content));
+                memcpy (self->needle,
+                        zchunk_data (self->content),
+                        zchunk_size (self->content));
+                self->needle += zchunk_size (self->content);
+            }
+            else
+                PUT_NUMBER4 (0);    //  Empty chunk
+            break;
+
+        case ZCCP_MSG_DELIVER:
+            if (self->origin) {
+                PUT_STRING (self->origin);
+            }
+            else
+                PUT_NUMBER1 (0);    //  Empty string
             if (self->header) {
                 PUT_STRING (self->header);
             }
@@ -630,6 +682,24 @@ zccp_msg_encode_publish (
 
 
 //  --------------------------------------------------------------------------
+//  Encode DELIVER message
+
+zmsg_t * 
+zccp_msg_encode_deliver (
+    const char *origin,
+    const char *header,
+    zchunk_t *content)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_DELIVER);
+    zccp_msg_set_origin (self, origin);
+    zccp_msg_set_header (self, header);
+    zchunk_t *content_copy = zchunk_dup (content);
+    zccp_msg_set_content (self, &content_copy);
+    return zccp_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
 //  Encode REQUEST message
 
 zmsg_t * 
@@ -731,6 +801,25 @@ zccp_msg_send_publish (
 
 
 //  --------------------------------------------------------------------------
+//  Send the DELIVER to the socket in one step
+
+int
+zccp_msg_send_deliver (
+    void *output,
+    const char *origin,
+    const char *header,
+    zchunk_t *content)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_DELIVER);
+    zccp_msg_set_origin (self, origin);
+    zccp_msg_set_header (self, header);
+    zchunk_t *content_copy = zchunk_dup (content);
+    zccp_msg_set_content (self, &content_copy);
+    return zccp_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
 //  Send the REQUEST to the socket in one step
 
 int
@@ -805,6 +894,12 @@ zccp_msg_dup (zccp_msg_t *self)
             copy->content = self->content? zchunk_dup (self->content): NULL;
             break;
 
+        case ZCCP_MSG_DELIVER:
+            copy->origin = self->origin? strdup (self->origin): NULL;
+            copy->header = self->header? strdup (self->header): NULL;
+            copy->content = self->content? zchunk_dup (self->content): NULL;
+            break;
+
         case ZCCP_MSG_REQUEST:
             copy->method = self->method? strdup (self->method): NULL;
             copy->content = self->content? zchunk_dup (self->content): NULL;
@@ -853,6 +948,19 @@ zccp_msg_print (zccp_msg_t *self)
             
         case ZCCP_MSG_PUBLISH:
             zsys_debug ("ZCCP_MSG_PUBLISH:");
+            if (self->header)
+                zsys_debug ("    header='%s'", self->header);
+            else
+                zsys_debug ("    header=");
+            zsys_debug ("    content=[ ... ]");
+            break;
+            
+        case ZCCP_MSG_DELIVER:
+            zsys_debug ("ZCCP_MSG_DELIVER:");
+            if (self->origin)
+                zsys_debug ("    origin='%s'", self->origin);
+            else
+                zsys_debug ("    origin=");
             if (self->header)
                 zsys_debug ("    header='%s'", self->header);
             else
@@ -937,6 +1045,9 @@ zccp_msg_command (zccp_msg_t *self)
             break;
         case ZCCP_MSG_PUBLISH:
             return ("PUBLISH");
+            break;
+        case ZCCP_MSG_DELIVER:
+            return ("DELIVER");
             break;
         case ZCCP_MSG_REQUEST:
             return ("REQUEST");
@@ -1050,6 +1161,29 @@ zccp_msg_set_content (zccp_msg_t *self, zchunk_t **chunk_p)
     zchunk_destroy (&self->content);
     self->content = *chunk_p;
     *chunk_p = NULL;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Get/set the origin field
+
+const char *
+zccp_msg_origin (zccp_msg_t *self)
+{
+    assert (self);
+    return self->origin;
+}
+
+void
+zccp_msg_set_origin (zccp_msg_t *self, const char *format, ...)
+{
+    //  Format origin from provided arguments
+    assert (self);
+    va_list argptr;
+    va_start (argptr, format);
+    free (self->origin);
+    self->origin = zsys_vprintf (format, argptr);
+    va_end (argptr);
 }
 
 
@@ -1198,6 +1332,31 @@ zccp_msg_test (bool verbose)
         assert (self);
         assert (zccp_msg_routing_id (self));
         
+        assert (streq (zccp_msg_header (self), "Life is short but Now lasts for ever"));
+        assert (memcmp (zchunk_data (zccp_msg_content (self)), "Captcha Diem", 12) == 0);
+        zccp_msg_destroy (&self);
+    }
+    self = zccp_msg_new (ZCCP_MSG_DELIVER);
+    
+    //  Check that _dup works on empty message
+    copy = zccp_msg_dup (self);
+    assert (copy);
+    zccp_msg_destroy (&copy);
+
+    zccp_msg_set_origin (self, "Life is short but Now lasts for ever");
+    zccp_msg_set_header (self, "Life is short but Now lasts for ever");
+    zchunk_t *deliver_content = zchunk_new ("Captcha Diem", 12);
+    zccp_msg_set_content (self, &deliver_content);
+    //  Send twice from same object
+    zccp_msg_send_again (self, output);
+    zccp_msg_send (&self, output);
+
+    for (instance = 0; instance < 2; instance++) {
+        self = zccp_msg_recv (input);
+        assert (self);
+        assert (zccp_msg_routing_id (self));
+        
+        assert (streq (zccp_msg_origin (self), "Life is short but Now lasts for ever"));
         assert (streq (zccp_msg_header (self), "Life is short but Now lasts for ever"));
         assert (memcmp (zchunk_data (zccp_msg_content (self)), "Captcha Diem", 12) == 0);
         zccp_msg_destroy (&self);

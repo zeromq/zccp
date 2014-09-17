@@ -25,20 +25,25 @@
 
     READY - Server accepts client
 
-    SUBSCRIBE - Client subscribes to some set of events
+    SUBSCRIBE - Client subscribes to some set of notifications
         expression          string      Regular expression
 
-    PUBLISH - Client publishes an event, or server delivers to client
+    PUBLISH - Client publishes a notification
         header              string      Header, for matching
-        content             chunk       Event content
+        content             chunk       Content
+
+    DELIVER - Server delivers notification to client
+        origin              string      A client identifier
+        header              string      Header
+        content             chunk       Content
 
     REQUEST - Request some action
         method              string      Requested method
-        content             chunk       Event content
+        content             chunk       Content
 
     REPLY - Reply to a command request
         status              number 2    Success/failure status
-        content             chunk       Event content
+        content             chunk       Content
 
     INVALID - Client sent a message that was not valid at this time
 */
@@ -48,9 +53,10 @@
 #define ZCCP_MSG_READY                      2
 #define ZCCP_MSG_SUBSCRIBE                  3
 #define ZCCP_MSG_PUBLISH                    4
-#define ZCCP_MSG_REQUEST                    5
-#define ZCCP_MSG_REPLY                      6
-#define ZCCP_MSG_INVALID                    7
+#define ZCCP_MSG_DELIVER                    5
+#define ZCCP_MSG_REQUEST                    6
+#define ZCCP_MSG_REPLY                      7
+#define ZCCP_MSG_INVALID                    8
 
 #ifdef __cplusplus
 extern "C" {
@@ -118,6 +124,13 @@ zmsg_t *
         const char *header,
         zchunk_t *content);
 
+//  Encode the DELIVER 
+zmsg_t *
+    zccp_msg_encode_deliver (
+        const char *origin,
+        const char *header,
+        zchunk_t *content);
+
 //  Encode the REQUEST 
 zmsg_t *
     zccp_msg_encode_request (
@@ -157,6 +170,14 @@ int
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.
 int
     zccp_msg_send_publish (void *output,
+        const char *header,
+        zchunk_t *content);
+    
+//  Send the DELIVER to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+int
+    zccp_msg_send_deliver (void *output,
+        const char *origin,
         const char *header,
         zchunk_t *content);
     
@@ -228,6 +249,12 @@ zchunk_t *
 //  Set the content field, transferring ownership from caller
 void
     zccp_msg_set_content (zccp_msg_t *self, zchunk_t **chunk_p);
+
+//  Get/set the origin field
+const char *
+    zccp_msg_origin (zccp_msg_t *self);
+void
+    zccp_msg_set_origin (zccp_msg_t *self, const char *format, ...);
 
 //  Get/set the method field
 const char *

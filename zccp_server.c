@@ -307,14 +307,14 @@ zccp_server_test (bool verbose)
     
     message = zccp_msg_recv (client);
     assert (message);
-    assert (zccp_msg_id (message) == ZCCP_MSG_PUBLISH);
+    assert (zccp_msg_id (message) == ZCCP_MSG_DELIVER);
     assert (streq (zccp_msg_header (message), "(HELLO, WORLD)"));
     assert (zchunk_streq (zccp_msg_content (message), "TEST"));
     zccp_msg_destroy (&message);
 
     message = zccp_msg_recv (client);
     assert (message);
-    assert (zccp_msg_id (message) == ZCCP_MSG_PUBLISH);
+    assert (zccp_msg_id (message) == ZCCP_MSG_DELIVER);
     assert (streq (zccp_msg_header (message), "(HELLO, WORLD)"));
     assert (zchunk_streq (zccp_msg_content (message), "TEST"));
     zccp_msg_destroy (&message);

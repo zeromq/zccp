@@ -520,11 +520,11 @@ s_client_execute (s_client_t *self, int event)
                         get_content_to_publish (&self->client);
                     }
                     if (!self->exception) {
-                        //  send publish
+                        //  send deliver
                         if (self->server->verbose)
-                            zsys_debug ("%s:         $ send PUBLISH",
+                            zsys_debug ("%s:         $ send DELIVER",
                                 self->log_prefix);
-                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_PUBLISH);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_DELIVER);
                         zccp_msg_send (&self->client.reply, self->server->router);
                         self->client.reply = zccp_msg_new (0);
                         zccp_msg_set_routing_id (self->client.reply, self->routing_id);

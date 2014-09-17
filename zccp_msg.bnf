@@ -13,27 +13,33 @@ The following ABNF grammar defines the ZeroMQ Command & Control Protocol:
     ;         Server accepts client
     ready           = signature %d2
 
-    ;         Client subscribes to some set of events
+    ;         Client subscribes to some set of notifications
     subscribe       = signature %d3 expression
     expression      = string                ; Regular expression
 
-    ;         Client publishes an event, or server delivers to client
+    ;         Client publishes a notification
     publish         = signature %d4 header content
     header          = string                ; Header, for matching
-    content         = chunk                 ; Event content
+    content         = chunk                 ; Content
+
+    ;         Server delivers notification to client
+    deliver         = signature %d5 origin header content
+    origin          = string                ; A client identifier
+    header          = string                ; Header
+    content         = chunk                 ; Content
 
     ;         Request some action
-    request         = signature %d5 method content
+    request         = signature %d6 method content
     method          = string                ; Requested method
-    content         = chunk                 ; Event content
+    content         = chunk                 ; Content
 
     ;         Reply to a command request
-    reply           = signature %d6 status content
+    reply           = signature %d7 status content
     status          = number-2              ; Success/failure status
-    content         = chunk                 ; Event content
+    content         = chunk                 ; Content
 
     ;         Client sent a message that was not valid at this time
-    invalid         = signature %d7
+    invalid         = signature %d8
 
     ; A chunk has 4-octet length + binary contents
     chunk           = number-4 *OCTET
