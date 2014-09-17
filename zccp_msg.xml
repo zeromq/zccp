@@ -15,7 +15,8 @@
     </grammar>
     
     <message name = "hello">
-        Client says hello to server
+        Client says hello to server and provides its identifier.
+        <field name = "identifier" type = "string">Client identifier</field>
     </message>
 
     <message name = "ready">

@@ -14,9 +14,11 @@ extern "C" {
 typedef struct _zccp_client_t zccp_client_t;
 
 // @interface
-//  Constructor
+//  Constructor: creates new connection to server, sending HELLO and
+//  expecting READY back. The client identifier is a string used for
+//  REQUEST/REPLY exchanges.
 CZMQ_EXPORT zccp_client_t *
-    zccp_client_new (const char *server);
+    zccp_client_new (const char *server, const char *identifier);
 
 //  Destructor
 CZMQ_EXPORT void

@@ -40,12 +40,12 @@ s_expect_reply (zccp_client_t *self, int message_id)
 
 
 //  ---------------------------------------------------------------------
-//  Constructor; open ">pipename" for writing, "pipename" for reading
-//  Returns a new client instance, or NULL if there was an error (e.g.
-//  two readers trying to access same pipe).
+//  Constructor: creates new connection to server, sending HELLO and
+//  expecting READY back. The client identifier is a string used for
+//  REQUEST/REPLY exchanges.
 
 zccp_client_t *
-zccp_client_new (const char *server)
+zccp_client_new (const char *identifier, const char *server)
 {
     zccp_client_t *self = (zccp_client_t *) zmalloc (sizeof (zccp_client_t));
     assert (self);
@@ -53,7 +53,7 @@ zccp_client_new (const char *server)
     self->dealer = zsock_new (ZMQ_DEALER);
     assert (self->dealer);
     if (zsock_connect (self->dealer, "%s", server) == 0) {
-        zccp_msg_send_hello (self->dealer);
+        zccp_msg_send_hello (self->dealer, identifier);
         if (s_expect_reply (self, ZCCP_MSG_READY))
             zccp_client_destroy (&self);
     }
@@ -107,7 +107,7 @@ zccp_client_test (bool verbose)
         zstr_send (server, "VERBOSE");
     zstr_sendx (server, "BIND", "ipc://@/zccp_server", NULL);
 
-    zccp_client_t *client = zccp_client_new ("ipc://@/zccp_server");
+    zccp_client_t *client = zccp_client_new ("zccp_client", "ipc://@/zccp_server");
     assert (client);
     zccp_client_destroy (&client);
     

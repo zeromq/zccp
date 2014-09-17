@@ -33,6 +33,7 @@ struct _zccp_msg_t {
     int id;                             //  zccp_msg message ID
     byte *needle;                       //  Read/write pointer for serialization
     byte *ceiling;                      //  Valid upper limit for read pointer
+    char *identifier;                   //  Client identifier
     char *header;                       //  Header, for matching
     zchunk_t *content;                  //  Event content
     char *method;                       //  Requested method
@@ -199,6 +200,7 @@ zccp_msg_destroy (zccp_msg_t **self_p)
 
         //  Free class properties
         zframe_destroy (&self->routing_id);
+        free (self->identifier);
         free (self->header);
         zchunk_destroy (&self->content);
         free (self->method);
@@ -242,6 +244,7 @@ zccp_msg_decode (zmsg_t **msg_p)
 
     switch (self->id) {
         case ZCCP_MSG_HELLO:
+            GET_STRING (self->identifier);
             break;
 
         case ZCCP_MSG_READY:
@@ -325,6 +328,10 @@ zccp_msg_encode (zccp_msg_t **self_p)
     size_t frame_size = 2 + 1;          //  Signature and message ID
     switch (self->id) {
         case ZCCP_MSG_HELLO:
+            //  identifier is a string with 1-byte length
+            frame_size++;       //  Size is one octet
+            if (self->identifier)
+                frame_size += strlen (self->identifier);
             break;
             
         case ZCCP_MSG_READY:
@@ -384,6 +391,11 @@ zccp_msg_encode (zccp_msg_t **self_p)
 
     switch (self->id) {
         case ZCCP_MSG_HELLO:
+            if (self->identifier) {
+                PUT_STRING (self->identifier);
+            }
+            else
+                PUT_NUMBER1 (0);    //  Empty string
             break;
 
         case ZCCP_MSG_READY:
@@ -566,9 +578,10 @@ zccp_msg_send_again (zccp_msg_t *self, void *output)
 
 zmsg_t * 
 zccp_msg_encode_hello (
-)
+    const char *identifier)
 {
     zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_HELLO);
+    zccp_msg_set_identifier (self, identifier);
     return zccp_msg_encode (&self);
 }
 
@@ -663,9 +676,11 @@ zccp_msg_encode_invalid (
 
 int
 zccp_msg_send_hello (
-    void *output)
+    void *output,
+    const char *identifier)
 {
     zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_HELLO);
+    zccp_msg_set_identifier (self, identifier);
     return zccp_msg_send (&self, output);
 }
 
@@ -773,6 +788,7 @@ zccp_msg_dup (zccp_msg_t *self)
         copy->routing_id = zframe_dup (self->routing_id);
     switch (self->id) {
         case ZCCP_MSG_HELLO:
+            copy->identifier = self->identifier? strdup (self->identifier): NULL;
             break;
 
         case ZCCP_MSG_READY:
@@ -815,6 +831,10 @@ zccp_msg_print (zccp_msg_t *self)
     switch (self->id) {
         case ZCCP_MSG_HELLO:
             zsys_debug ("ZCCP_MSG_HELLO:");
+            if (self->identifier)
+                zsys_debug ("    identifier='%s'", self->identifier);
+            else
+                zsys_debug ("    identifier=");
             break;
             
         case ZCCP_MSG_READY:
@@ -928,6 +948,29 @@ zccp_msg_command (zccp_msg_t *self)
     }
     return "?";
 }
+
+//  --------------------------------------------------------------------------
+//  Get/set the identifier field
+
+const char *
+zccp_msg_identifier (zccp_msg_t *self)
+{
+    assert (self);
+    return self->identifier;
+}
+
+void
+zccp_msg_set_identifier (zccp_msg_t *self, const char *format, ...)
+{
+    //  Format identifier from provided arguments
+    assert (self);
+    va_list argptr;
+    va_start (argptr, format);
+    free (self->identifier);
+    self->identifier = zsys_vprintf (format, argptr);
+    va_end (argptr);
+}
+
 
 //  --------------------------------------------------------------------------
 //  Get/set the header field
@@ -1060,6 +1103,7 @@ zccp_msg_test (bool verbose)
     assert (copy);
     zccp_msg_destroy (&copy);
 
+    zccp_msg_set_identifier (self, "Life is short but Now lasts for ever");
     //  Send twice from same object
     zccp_msg_send_again (self, output);
     zccp_msg_send (&self, output);
@@ -1069,6 +1113,7 @@ zccp_msg_test (bool verbose)
         assert (self);
         assert (zccp_msg_routing_id (self));
         
+        assert (streq (zccp_msg_identifier (self), "Life is short but Now lasts for ever"));
         zccp_msg_destroy (&self);
     }
     self = zccp_msg_new (ZCCP_MSG_READY);

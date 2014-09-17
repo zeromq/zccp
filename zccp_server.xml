@@ -10,6 +10,7 @@
 
     <state name = "start" inherit = "external">
         <event name = "HELLO" next = "connected">
+            <action name = "register new client" />
             <action name = "send" message = "READY" />
         </event>
     </state>

@@ -6,9 +6,10 @@ The following ABNF grammar defines the ZeroMQ Command & Control Protocol:
     traffic = subscribe / publish / request / reply
     heartbeat = C:ping S:pong
 
-    ;         Client says hello to server
-    hello           = signature %d1
+    ;         Client says hello to server and provides its identifier.
+    hello           = signature %d1 identifier
     signature       = %xAA %xA10            ; two octets
+    identifier      = string                ; Client identifier
 
     ;         Server accepts client
     ready           = signature %d2

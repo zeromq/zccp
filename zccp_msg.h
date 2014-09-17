@@ -20,7 +20,8 @@
 
 /*  These are the zccp_msg messages:
 
-    HELLO - Client says hello to server
+    HELLO - Client says hello to server and provides its identifier.
+        identifier          string      Client identifier
 
     READY - Server accepts client
 
@@ -99,7 +100,7 @@ int
 //  Encode the HELLO 
 zmsg_t *
     zccp_msg_encode_hello (
-);
+        const char *identifier);
 
 //  Encode the READY 
 zmsg_t *
@@ -138,7 +139,8 @@ zmsg_t *
 //  Send the HELLO to the output in one step
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.
 int
-    zccp_msg_send_hello (void *output);
+    zccp_msg_send_hello (void *output,
+        const char *identifier);
     
 //  Send the READY to the output in one step
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.
@@ -198,6 +200,12 @@ void
     zccp_msg_set_id (zccp_msg_t *self, int id);
 const char *
     zccp_msg_command (zccp_msg_t *self);
+
+//  Get/set the identifier field
+const char *
+    zccp_msg_identifier (zccp_msg_t *self);
+void
+    zccp_msg_set_identifier (zccp_msg_t *self, const char *format, ...);
 
 //  Get/set the header field
 const char *

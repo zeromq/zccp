@@ -100,6 +100,18 @@ client_terminate (client_t *self)
 
 
 //  --------------------------------------------------------------------------
+//  register_new_client
+//
+
+static void
+register_new_client (client_t *self)
+{
+    zsys_info ("register client identifier=%s",
+               zccp_msg_identifier (self->request));
+}
+
+
+//  --------------------------------------------------------------------------
 //  subscribe_client_to_events
 //
 
@@ -155,7 +167,7 @@ zccp_server_test (bool verbose)
     assert (zccp_msg_id (message) == ZCCP_MSG_INVALID);
     zccp_msg_destroy (&message);
     
-    zccp_msg_send_hello (client);
+    zccp_msg_send_hello (client, "step 1");
     message = zccp_msg_recv (client);
     assert (message);
     assert (zccp_msg_id (message) == ZCCP_MSG_READY);
@@ -167,14 +179,14 @@ zccp_server_test (bool verbose)
     assert (zccp_msg_id (message) == ZCCP_MSG_REPLY);
     zccp_msg_destroy (&message);
 
-    zccp_msg_send_hello (client);
+    zccp_msg_send_hello (client, "step 2");
     message = zccp_msg_recv (client);
     assert (message);
     assert (zccp_msg_id (message) == ZCCP_MSG_INVALID);
     zccp_msg_destroy (&message);
 
     //  Let's try some SUBSCRIBE and PUBLISH commands
-    zccp_msg_send_hello (client);
+    zccp_msg_send_hello (client, "step 3 - client");
     message = zccp_msg_recv (client);
     assert (message);
     assert (zccp_msg_id (message) == ZCCP_MSG_READY);
@@ -184,7 +196,7 @@ zccp_server_test (bool verbose)
     assert (device);
     zsock_connect (device, "ipc://@/zccp_server");
     
-    zccp_msg_send_hello (device);
+    zccp_msg_send_hello (device, "step 3 - device");
     message = zccp_msg_recv (device);
     assert (message);
     assert (zccp_msg_id (message) == ZCCP_MSG_READY);
@@ -205,3 +217,4 @@ zccp_server_test (bool verbose)
     //  @end
     printf ("OK\n");
 }
+

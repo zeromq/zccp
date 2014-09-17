@@ -111,6 +111,8 @@ static void
 static int
     s_client_wakeup (zloop_t *loop, int timer_id, void *argument);
 static void
+    register_new_client (client_t *self);
+static void
     subscribe_client_to_events (client_t *self);
 static void
     forward_to_subscribers (client_t *self);
@@ -425,6 +427,12 @@ s_client_execute (s_client_t *self, int event)
         switch (self->state) {
             case start_state:
                 if (self->event == hello_event) {
+                    if (!self->exception) {
+                        //  register new client
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ register new client", self->log_prefix);
+                        register_new_client (&self->client);
+                    }
                     if (!self->exception) {
                         //  send ready
                         if (self->server->verbose)
