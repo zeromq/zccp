@@ -30,7 +30,8 @@ typedef enum {
     hello_event = 1,
     subscribe_event = 2,
     publish_event = 3,
-    request_event = 4
+    request_event = 4,
+    forward_event = 5
 } event_t;
 
 //  Names for state machine logging and error reporting
@@ -48,7 +49,8 @@ s_event_name [] = {
     "HELLO",
     "SUBSCRIBE",
     "PUBLISH",
-    "REQUEST"
+    "REQUEST",
+    "forward"
 };
  
 
@@ -109,7 +111,9 @@ static void
 static int
     s_client_wakeup (zloop_t *loop, int timer_id, void *argument);
 static void
-    forward_to_everyone (client_t *self);
+    subscribe_client_to_events (client_t *self);
+static void
+    forward_to_subscribers (client_t *self);
 
 //  ---------------------------------------------------------------------
 //  These methods are an internal API for actions
@@ -458,19 +462,19 @@ s_client_execute (s_client_t *self, int event)
             case connected_state:
                 if (self->event == subscribe_event) {
                     if (!self->exception) {
-                        //  forward to everyone
+                        //  subscribe client to events
                         if (self->server->verbose)
-                            zsys_debug ("%s:         $ forward to everyone", self->log_prefix);
-                        forward_to_everyone (&self->client);
+                            zsys_debug ("%s:         $ subscribe client to events", self->log_prefix);
+                        subscribe_client_to_events (&self->client);
                     }
                 }
                 else
                 if (self->event == publish_event) {
                     if (!self->exception) {
-                        //  forward to everyone
+                        //  forward to subscribers
                         if (self->server->verbose)
-                            zsys_debug ("%s:         $ forward to everyone", self->log_prefix);
-                        forward_to_everyone (&self->client);
+                            zsys_debug ("%s:         $ forward to subscribers", self->log_prefix);
+                        forward_to_subscribers (&self->client);
                     }
                 }
                 else
@@ -481,6 +485,19 @@ s_client_execute (s_client_t *self, int event)
                             zsys_debug ("%s:         $ send REPLY",
                                 self->log_prefix);
                         zccp_msg_set_id (self->client.reply, ZCCP_MSG_REPLY);
+                        zccp_msg_send (&self->client.reply, self->server->router);
+                        self->client.reply = zccp_msg_new (0);
+                        zccp_msg_set_routing_id (self->client.reply, self->routing_id);
+                    }
+                }
+                else
+                if (self->event == forward_event) {
+                    if (!self->exception) {
+                        //  send publish
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ send PUBLISH",
+                                self->log_prefix);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_PUBLISH);
                         zccp_msg_send (&self->client.reply, self->server->router);
                         self->client.reply = zccp_msg_new (0);
                         zccp_msg_set_routing_id (self->client.reply, self->routing_id);
@@ -625,11 +642,13 @@ s_server_destroy (s_server_t **self_p)
     assert (self_p);
     if (*self_p) {
         s_server_t *self = *self_p;
-        server_terminate (&self->server);
         zsock_destroy (&self->router);
         zconfig_destroy (&self->config);
-        zhash_destroy (&self->clients);
         zloop_destroy (&self->loop);
+        zhash_destroy (&self->clients);
+        //  Dear future self: do this last, so client_terminate
+        //  can work with server
+        server_terminate (&self->server);
         free (self);
         *self_p = NULL;
     }

@@ -32,7 +32,7 @@ struct _server_t {
     zconfig_t *config;          //  Current loaded configuration
     
     //  Add any properties you need here
-    
+    zlist_t *subscribers;       //  List of known subscribers
 };
 
 //  ---------------------------------------------------------------------
@@ -59,7 +59,7 @@ struct _client_t {
 static int
 server_initialize (server_t *self)
 {
-    //  Construct properties here
+    self->subscribers = zlist_new ();
     return 0;
 }
 
@@ -68,7 +68,7 @@ server_initialize (server_t *self)
 static void
 server_terminate (server_t *self)
 {
-    //  Destroy properties here
+    zlist_destroy (&self->subscribers);
 }
 
 //  Process server API method, return reply message if any
@@ -95,17 +95,33 @@ client_initialize (client_t *self)
 static void
 client_terminate (client_t *self)
 {
-    //  Destroy properties here
+    zlist_remove (self->server->subscribers, self);
 }
 
 
 //  --------------------------------------------------------------------------
-//  forward_to_everyone
+//  subscribe_client_to_events
 //
 
 static void
-forward_to_everyone (client_t *self)
+subscribe_client_to_events (client_t *self)
 {
+    zlist_append (self->server->subscribers, self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  forward_to_subscribers
+//
+
+static void
+forward_to_subscribers (client_t *self)
+{
+    client_t *client = (client_t *) zlist_first (self->server->subscribers);
+    while (client) {
+        engine_send_event (client, forward_event);
+        client = (client_t *) zlist_next (self->server->subscribers);
+    }
 }
 
 
@@ -127,10 +143,11 @@ zccp_server_test (bool verbose)
 
     zsock_t *client = zsock_new (ZMQ_DEALER);
     assert (client);
-    zsock_set_rcvtimeo (client, 2000);
     zsock_connect (client, "ipc://@/zccp_server");
 
     zccp_msg_t *message;
+    
+    //  Check HELLO/READY and INVALID
     
     zccp_msg_send_request (client, "START", NULL);
     message = zccp_msg_recv (client);
@@ -156,9 +173,35 @@ zccp_server_test (bool verbose)
     assert (zccp_msg_id (message) == ZCCP_MSG_INVALID);
     zccp_msg_destroy (&message);
 
+    //  Let's try some SUBSCRIBE and PUBLISH commands
+    zccp_msg_send_hello (client);
+    message = zccp_msg_recv (client);
+    assert (message);
+    assert (zccp_msg_id (message) == ZCCP_MSG_READY);
+    zccp_msg_destroy (&message);
+    
+    zsock_t *device = zsock_new (ZMQ_DEALER);
+    assert (device);
+    zsock_connect (device, "ipc://@/zccp_server");
+    
+    zccp_msg_send_hello (device);
+    message = zccp_msg_recv (device);
+    assert (message);
+    assert (zccp_msg_id (message) == ZCCP_MSG_READY);
+    zccp_msg_destroy (&message);
+    
+    zccp_msg_send_subscribe (client, "*");
+    zccp_msg_send_publish (device, "WARNING!!", NULL);
+    
+    message = zccp_msg_recv (client);
+    assert (message);
+    assert (zccp_msg_id (message) == ZCCP_MSG_PUBLISH);
+    zccp_msg_destroy (&message);
+
+    //  Finished, we can clean up
+    zsock_destroy (&device);
     zsock_destroy (&client);
     zactor_destroy (&server);
     //  @end
     printf ("OK\n");
 }
-

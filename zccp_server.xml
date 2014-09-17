@@ -16,13 +16,16 @@
 
     <state name = "connected" inherit = "external">
         <event name = "SUBSCRIBE">
-            <action name = "forward to everyone" />
+            <action name = "subscribe client to events" />
         </event>
         <event name = "PUBLISH">
-            <action name = "forward to everyone" />
+            <action name = "forward to subscribers" />
         </event>
         <event name = "REQUEST">
             <action name = "send" message = "REPLY" />
+        </event>
+        <event name = "forward">
+            <action name = "send" message = "PUBLISH" />
         </event>
     </state>
 
