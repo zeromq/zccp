@@ -1,0 +1,31 @@
+<class
+    name = "zccp_server"
+    title = "ZCCP Server"
+    proto = "zccp_msg"
+    script = "zproto_server_c"
+    include = "czmq.h"
+    header = "."
+    >
+    This is a server implementation of the ZeroMQ Command & Control Protocol
+
+    <state name = "start">
+        <event name = "HELLO" next = "connected">
+            <action name = "send" message = "READY" />
+        </event>
+    </state>
+
+    <state name = "connected">
+        <event name = "SUBSCRIBE">
+            <action name = "forward to everyone" />
+        </event>
+        <event name = "PUBLISH">
+            <action name = "forward to everyone" />
+        </event>
+        <event name = "REQUEST">
+            <action name = "forward to everyone" />
+        </event>
+        <event name = "REPLY">
+            <action name = "forward to everyone" />
+        </event>
+    </state>
+</class>

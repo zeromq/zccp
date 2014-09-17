@@ -1,0 +1,47 @@
+<class
+    name = "zccp_msg"
+    title = "ZeroMQ Command & Control Protocol"
+    header = "."
+    include = "czmq.h"
+    script = "zproto_codec_c"
+    signature = "10"
+    >
+    <grammar>
+    ZCCP = greeting ( traffic / heartbeat )
+    
+    greeting = C:hello S:ready
+    traffic = subscribe / publish / request / reply
+    heartbeat = C:ping S:pong
+    </grammar>
+    
+    <message name = "hello">
+        Client says hello to server
+    </message>
+
+    <message name = "ready">
+        Server accepts client
+    </message>
+
+    <message name = "subscribe">
+        Client subscribes to some set of events
+        <field name = "header" type = "string">Header, for matching</field>
+    </message>
+
+    <message name = "publish">
+        Client publishes an event, or server delivers to client
+        <field name = "header" type = "string">Header, for matching</field>
+        <field name = "content" type = "chunk">Event content</field>
+    </message>
+
+    <message name = "request">
+        Request some action
+        <field name = "method" type = "string">Requested method</field>
+        <field name = "content" type = "chunk">Event content</field>
+    </message>
+
+    <message name = "reply">
+        Reply to a command request
+        <field name = "status" type = "number" size = "2">Success/failure status</field>
+        <field name = "content" type = "chunk">Event content</field>
+    </message>
+</class>
