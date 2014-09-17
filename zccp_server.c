@@ -32,6 +32,7 @@ struct _server_t {
     zconfig_t *config;          //  Current loaded configuration
     
     zlist_t *patterns;          //  List of patterns subscribed to
+    zccp_msg_t *request;        //  Message being published to subscribers
 };
 
 //  ---------------------------------------------------------------------
@@ -193,6 +194,10 @@ store_new_subscription (client_t *self)
 static void
 forward_to_subscribers (client_t *self)
 {
+    //  Keep track of the message we're sending out to subscribers
+    self->server->request = self->request;
+    
+    //  Now find all matching subscribers
     pattern_t *pattern = (pattern_t *) zlist_first (self->server->patterns);
     while (pattern) {
         if (zrex_matches (pattern->rex, zccp_msg_header (self->request))) {
@@ -205,6 +210,22 @@ forward_to_subscribers (client_t *self)
         }
         pattern = (pattern_t *) zlist_next (self->server->patterns);
     }
+}
+
+
+
+//  --------------------------------------------------------------------------
+//  get_content_to_publish
+//
+
+static void
+get_content_to_publish (client_t *self)
+{
+    zchunk_t *content = zchunk_dup (zccp_msg_content (self->server->request));
+    const char *header = zccp_msg_header (self->server->request);
+    
+    zccp_msg_set_content (self->reply, &content);
+    zccp_msg_set_header (self->reply, header);
 }
 
 
@@ -227,6 +248,7 @@ zccp_server_test (bool verbose)
     zsock_t *client = zsock_new (ZMQ_DEALER);
     assert (client);
     zsock_connect (client, "ipc://@/zccp_server");
+    zsock_set_rcvtimeo (client, 200);
 
     zccp_msg_t *message;
     
@@ -272,15 +294,34 @@ zccp_server_test (bool verbose)
     assert (message);
     assert (zccp_msg_id (message) == ZCCP_MSG_READY);
     zccp_msg_destroy (&message);
-    
+
+    //  Check our subscription engine; this should deliver us 2 messages
     zccp_msg_send_subscribe (client, "H.*O");
-    zccp_msg_send_publish (device, "(HELLO, WORLD)", NULL);
+    zccp_msg_send_subscribe (client, "H.*O");
+    zccp_msg_send_subscribe (client, "HELLO");
+    //  Artificial delay to ensure subscriptions all arrive before we continue
+    zclock_sleep (100);
+    zchunk_t *content = zchunk_new ("TEST", 4);
+    zccp_msg_send_publish (device, "(HELLO, WORLD)", content);
+    zchunk_destroy (&content);
     
     message = zccp_msg_recv (client);
     assert (message);
     assert (zccp_msg_id (message) == ZCCP_MSG_PUBLISH);
+    assert (streq (zccp_msg_header (message), "(HELLO, WORLD)"));
+    assert (zchunk_streq (zccp_msg_content (message), "TEST"));
     zccp_msg_destroy (&message);
 
+    message = zccp_msg_recv (client);
+    assert (message);
+    assert (zccp_msg_id (message) == ZCCP_MSG_PUBLISH);
+    assert (streq (zccp_msg_header (message), "(HELLO, WORLD)"));
+    assert (zchunk_streq (zccp_msg_content (message), "TEST"));
+    zccp_msg_destroy (&message);
+
+    message = zccp_msg_recv (client);
+    assert (!message);
+    
     //  Finished, we can clean up
     zsock_destroy (&device);
     zsock_destroy (&client);
@@ -288,4 +329,3 @@ zccp_server_test (bool verbose)
     //  @end
     printf ("OK\n");
 }
-

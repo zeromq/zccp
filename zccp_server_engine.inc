@@ -118,6 +118,8 @@ static void
     store_new_subscription (client_t *self);
 static void
     forward_to_subscribers (client_t *self);
+static void
+    get_content_to_publish (client_t *self);
 
 //  ---------------------------------------------------------------------
 //  These methods are an internal API for actions
@@ -511,6 +513,12 @@ s_client_execute (s_client_t *self, int event)
                 }
                 else
                 if (self->event == forward_event) {
+                    if (!self->exception) {
+                        //  get content to publish
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ get content to publish", self->log_prefix);
+                        get_content_to_publish (&self->client);
+                    }
                     if (!self->exception) {
                         //  send publish
                         if (self->server->verbose)

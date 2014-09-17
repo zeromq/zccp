@@ -26,6 +26,7 @@
             <action name = "send" message = "REPLY" />
         </event>
         <event name = "forward">
+            <action name = "get content to publish" />
             <action name = "send" message = "PUBLISH" />
         </event>
     </state>

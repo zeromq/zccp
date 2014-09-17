@@ -3,7 +3,8 @@ rm -f core
 
 #   Build and run selftest
 gcc -o zccp_selftest zccp_selftest.c zccp_msg.c zccp_server.c zccp_client.c -lczmq -lzmq -g
-test $? -eq 0 && ./zccp_selftest
+test $? -ne 0 && exit
+./zccp_selftest
 
 #   Build broker, do not run it
 gcc -o zccpd zccpd.c zccp_msg.c zccp_server.c -lczmq -lzmq -g
