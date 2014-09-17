@@ -107,6 +107,7 @@ zccp_client_send (zccp_client_t *self, const char *type, const char *message)
 int
 zccp_client_recv (zccp_client_t *self, char **type, char **body)
 {
+    zsock_set_rcvtimeo (self->dealer, -1);
     zccp_msg_t *msg = zccp_msg_recv (self->dealer);
     if (!msg)
         return -1;              //  Interrupted

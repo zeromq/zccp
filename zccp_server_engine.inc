@@ -32,8 +32,7 @@ typedef enum {
     publish_event = 3,
     request_event = 4,
     forward_event = 5,
-    goodbye_event = 6,
-    expired_event = 7
+    goodbye_event = 6
 } event_t;
 
 //  Names for state machine logging and error reporting
@@ -53,8 +52,7 @@ s_event_name [] = {
     "PUBLISH",
     "REQUEST",
     "forward",
-    "GOODBYE",
-    "expired"
+    "GOODBYE"
 };
  
 
@@ -474,15 +472,6 @@ s_client_execute (s_client_t *self, int event)
                         self->next_event = terminate_event;
                     }
                 }
-                else
-                if (self->event == expired_event) {
-                    if (!self->exception) {
-                        //  terminate
-                        if (self->server->verbose)
-                            zsys_debug ("%s:         $ terminate", self->log_prefix);
-                        self->next_event = terminate_event;
-                    }
-                }
                 else {
                     //  Handle unexpected protocol events
                     if (!self->exception) {
@@ -573,15 +562,6 @@ s_client_execute (s_client_t *self, int event)
                         self->next_event = terminate_event;
                     }
                 }
-                else
-                if (self->event == expired_event) {
-                    if (!self->exception) {
-                        //  terminate
-                        if (self->server->verbose)
-                            zsys_debug ("%s:         $ terminate", self->log_prefix);
-                        self->next_event = terminate_event;
-                    }
-                }
                 else {
                     //  Handle unexpected protocol events
                     if (!self->exception) {
@@ -615,15 +595,6 @@ s_client_execute (s_client_t *self, int event)
                         self->client.reply = zccp_msg_new (0);
                         zccp_msg_set_routing_id (self->client.reply, self->routing_id);
                     }
-                    if (!self->exception) {
-                        //  terminate
-                        if (self->server->verbose)
-                            zsys_debug ("%s:         $ terminate", self->log_prefix);
-                        self->next_event = terminate_event;
-                    }
-                }
-                else
-                if (self->event == expired_event) {
                     if (!self->exception) {
                         //  terminate
                         if (self->server->verbose)
@@ -675,16 +646,6 @@ s_client_execute (s_client_t *self, int event)
                 self->next_event = s_client_filter_mailbox (self);
         }
     }
-}
-
-//  zloop callback when client inactivity timer expires
-
-static int
-s_client_expired (zloop_t *loop, int timer_id, void *argument)
-{
-    s_client_t *self = (s_client_t *) argument;
-    s_client_execute (self, expired_event);
-    return 0;
 }
 
 //  zloop callback when client wakeup timer expires
@@ -892,13 +853,6 @@ s_server_client_message (zloop_t *loop, zsock_t *reader, void *argument)
     }
     free (hashkey);
 
-    //  Any input from client counts as activity
-    if (client->expiry_timer)
-        zloop_timer_end (self->loop, client->expiry_timer);
-    //  Reset expiry timer
-    client->expiry_timer = zloop_timer (
-        self->loop, self->timeout, 1, s_client_expired, client);
-        
     //  Queue request and possibly pass it to client state machine
     zlist_append (client->mailbox, msg);
     event_t event = s_client_filter_mailbox (client);
