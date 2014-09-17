@@ -33,6 +33,7 @@ struct _server_t {
     
     zlist_t *patterns;          //  List of patterns subscribed to
     zccp_msg_t *request;        //  Message being published to subscribers
+    char *origin;               //  Identifier of client that sent message
 };
 
 //  ---------------------------------------------------------------------
@@ -47,6 +48,7 @@ struct _client_t {
     zccp_msg_t *reply;          //  Reply to send out, if any
 
     //  These properties are specific for this application
+    char *identifier;           //  Identifier of client
 };
 
 //  Include the generated server engine
@@ -142,6 +144,7 @@ client_terminate (client_t *self)
         zlist_remove (pattern->clients, self);
         pattern = (pattern_t *) zlist_next (self->server->patterns);
     }
+    free (self->identifier);
 }
 
 
@@ -152,8 +155,7 @@ client_terminate (client_t *self)
 static void
 register_new_client (client_t *self)
 {
-    zsys_info ("register client identifier=%s",
-               zccp_msg_identifier (self->request));
+    self->identifier = strdup (zccp_msg_identifier (self->request));
 }
 
 
@@ -196,6 +198,7 @@ forward_to_subscribers (client_t *self)
 {
     //  Keep track of the message we're sending out to subscribers
     self->server->request = self->request;
+    self->server->origin = self->identifier;
     
     //  Now find all matching subscribers
     pattern_t *pattern = (pattern_t *) zlist_first (self->server->patterns);
@@ -223,7 +226,8 @@ get_content_to_publish (client_t *self)
 {
     zchunk_t *content = zchunk_dup (zccp_msg_content (self->server->request));
     const char *header = zccp_msg_header (self->server->request);
-    
+
+    zccp_msg_set_origin (self->reply, self->server->origin);
     zccp_msg_set_content (self->reply, &content);
     zccp_msg_set_header (self->reply, header);
 }
