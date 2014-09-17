@@ -10,7 +10,8 @@
     ZCCP = greeting traffic
     
     greeting = C:hello S:ready
-    traffic = subscribe / publish / request / reply
+    traffic = C:subscribe / C:publish / S:deliver
+            / request / reply
     </grammar>
     
     <message name = "hello">

@@ -3,7 +3,8 @@ The following ABNF grammar defines the ZeroMQ Command & Control Protocol:
     ZCCP = greeting traffic
     
     greeting = C:hello S:ready
-    traffic = subscribe / publish / request / reply
+    traffic = C:subscribe / C:publish / S:deliver
+            / request / reply
 
     ;         Client says hello to server and provides its identifier.
     hello           = signature %d1 identifier

@@ -17,19 +17,28 @@ typedef struct _zccp_client_t zccp_client_t;
 //  Constructor: creates new connection to server, sending HELLO and
 //  expecting READY back. The client identifier is a string used for
 //  REQUEST/REPLY exchanges.
-CZMQ_EXPORT zccp_client_t *
+zccp_client_t *
     zccp_client_new (const char *server, const char *identifier);
 
 //  Destructor
-CZMQ_EXPORT void
+void
     zccp_client_destroy (zccp_client_t **self_p);
 
-//  Returns last error number, if any
-CZMQ_EXPORT int
-    zccp_client_error (zccp_client_t *self);
+//  Subscribe to some set of notifications
+void
+    zccp_client_subscribe (zccp_client_t *self, const char *subscription);
+
+//  Send a notification message of some type
+void
+    zccp_client_send (zccp_client_t *self, const char *type, const char *message);
+
+//  Wait for and receive next notification message; returns 0 if OK,
+//  else returns -1.
+int
+    zccp_client_recv (zccp_client_t *self, char **type, char **body);
 
 // Self test of this class
-CZMQ_EXPORT void
+void
     zccp_client_test (bool verbose);
 // @end
 
