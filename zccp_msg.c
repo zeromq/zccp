@@ -287,6 +287,9 @@ zccp_msg_decode (zmsg_t **msg_p)
             }
             break;
 
+        case ZCCP_MSG_INVALID:
+            break;
+
         default:
             goto malformed;
     }
@@ -365,6 +368,9 @@ zccp_msg_encode (zccp_msg_t **self_p)
                 frame_size += zchunk_size (self->content);
             break;
             
+        case ZCCP_MSG_INVALID:
+            break;
+            
         default:
             zsys_error ("bad message type '%d', not sent\n", self->id);
             //  No recovery, this is a fatal application error
@@ -436,6 +442,9 @@ zccp_msg_encode (zccp_msg_t **self_p)
             }
             else
                 PUT_NUMBER4 (0);    //  Empty chunk
+            break;
+
+        case ZCCP_MSG_INVALID:
             break;
 
     }
@@ -638,6 +647,18 @@ zccp_msg_encode_reply (
 
 
 //  --------------------------------------------------------------------------
+//  Encode INVALID message
+
+zmsg_t * 
+zccp_msg_encode_invalid (
+)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_INVALID);
+    return zccp_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
 //  Send the HELLO to the socket in one step
 
 int
@@ -727,6 +748,18 @@ zccp_msg_send_reply (
 
 
 //  --------------------------------------------------------------------------
+//  Send the INVALID to the socket in one step
+
+int
+zccp_msg_send_invalid (
+    void *output)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_INVALID);
+    return zccp_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
 //  Duplicate the zccp_msg message
 
 zccp_msg_t *
@@ -762,6 +795,9 @@ zccp_msg_dup (zccp_msg_t *self)
         case ZCCP_MSG_REPLY:
             copy->status = self->status;
             copy->content = self->content? zchunk_dup (self->content): NULL;
+            break;
+
+        case ZCCP_MSG_INVALID:
             break;
 
     }
@@ -815,6 +851,10 @@ zccp_msg_print (zccp_msg_t *self)
             zsys_debug ("ZCCP_MSG_REPLY:");
             zsys_debug ("    status=%ld", (long) self->status);
             zsys_debug ("    content=[ ... ]");
+            break;
+            
+        case ZCCP_MSG_INVALID:
+            zsys_debug ("ZCCP_MSG_INVALID:");
             break;
             
     }
@@ -881,6 +921,9 @@ zccp_msg_command (zccp_msg_t *self)
             break;
         case ZCCP_MSG_REPLY:
             return ("REPLY");
+            break;
+        case ZCCP_MSG_INVALID:
+            return ("INVALID");
             break;
     }
     return "?";
@@ -1133,6 +1176,24 @@ zccp_msg_test (bool verbose)
         
         assert (zccp_msg_status (self) == 123);
         assert (memcmp (zchunk_data (zccp_msg_content (self)), "Captcha Diem", 12) == 0);
+        zccp_msg_destroy (&self);
+    }
+    self = zccp_msg_new (ZCCP_MSG_INVALID);
+    
+    //  Check that _dup works on empty message
+    copy = zccp_msg_dup (self);
+    assert (copy);
+    zccp_msg_destroy (&copy);
+
+    //  Send twice from same object
+    zccp_msg_send_again (self, output);
+    zccp_msg_send (&self, output);
+
+    for (instance = 0; instance < 2; instance++) {
+        self = zccp_msg_recv (input);
+        assert (self);
+        assert (zccp_msg_routing_id (self));
+        
         zccp_msg_destroy (&self);
     }
 

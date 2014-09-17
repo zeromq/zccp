@@ -1,3 +1,4 @@
+gsl -q *.xml
 rm -f core
 gcc -o zccpd zccp*.c -lczmq -lzmq -g
-./zccpd
+test $? -eq 0 && ./zccpd

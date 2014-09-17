@@ -2,9 +2,9 @@ The following ABNF grammar defines the ZeroMQ Command & Control Protocol:
 
     ZCCP = greeting ( traffic / heartbeat )
     
-    greeting = C:HELLO S:READY
-    traffic = SUBSCRIBE / PUBLISH / REQUEST / REPLY
-    heartbeat = C:PING S:PONG
+    greeting = C:hello S:ready
+    traffic = subscribe / publish / request / reply
+    heartbeat = C:ping S:pong
 
     ;         Client says hello to server
     hello           = signature %d1
@@ -31,6 +31,9 @@ The following ABNF grammar defines the ZeroMQ Command & Control Protocol:
     reply           = signature %d6 status content
     status          = number-2              ; Success/failure status
     content         = chunk                 ; Event content
+
+    ;         Client sent a message that was not valid at this time
+    invalid         = signature %d7
 
     ; A chunk has 4-octet length + binary contents
     chunk           = number-4 *OCTET

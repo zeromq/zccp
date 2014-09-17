@@ -10,5 +10,6 @@
 #include <czmq.h>
 #include "zccp_msg.h"
 #include "zccp_server.h"
+#include "zccp_client.h"
 
 #endif

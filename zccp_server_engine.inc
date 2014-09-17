@@ -20,7 +20,8 @@
 
 typedef enum {
     start_state = 1,
-    connected_state = 2
+    connected_state = 2,
+    external_state = 3
 } state_t;
 
 typedef enum {
@@ -29,8 +30,7 @@ typedef enum {
     hello_event = 1,
     subscribe_event = 2,
     publish_event = 3,
-    request_event = 4,
-    reply_event = 5
+    request_event = 4
 } event_t;
 
 //  Names for state machine logging and error reporting
@@ -38,7 +38,8 @@ static char *
 s_state_name [] = {
     "(NONE)",
     "start",
-    "connected"
+    "connected",
+    "external"
 };
 
 static char *
@@ -47,8 +48,7 @@ s_event_name [] = {
     "HELLO",
     "SUBSCRIBE",
     "PUBLISH",
-    "REQUEST",
-    "REPLY"
+    "REQUEST"
 };
  
 
@@ -287,9 +287,6 @@ s_protocol_event (zccp_msg_t *request)
         case ZCCP_MSG_REQUEST:
             return request_event;
             break;
-        case ZCCP_MSG_REPLY:
-            return reply_event;
-            break;
         default:
             //  Invalid zccp_msg_t
             return terminate_event;
@@ -377,19 +374,13 @@ s_client_filter_mailbox (s_client_t *self)
         //  This should be changed to a pre-built lookup table
         event_t event = s_protocol_event (request);
         bool event_is_valid;
-        if (self->state == start_state && event == hello_event)
+        if (self->state == start_state)
             event_is_valid = true;
         else
-        if (self->state == connected_state && event == subscribe_event)
+        if (self->state == connected_state)
             event_is_valid = true;
         else
-        if (self->state == connected_state && event == publish_event)
-            event_is_valid = true;
-        else
-        if (self->state == connected_state && event == request_event)
-            event_is_valid = true;
-        else
-        if (self->state == connected_state && event == reply_event)
+        if (self->state == external_state)
             event_is_valid = true;
         else
             event_is_valid = false;
@@ -444,12 +435,23 @@ s_client_execute (s_client_t *self, int event)
                         self->state = connected_state;
                 }
                 else {
-                    //  Handle unexpected internal events
-                    zsys_warning ("%s: unhandled event %s in %s",
-                        self->log_prefix,
-                        s_event_name [self->event],
-                        s_state_name [self->state]);
-                    assert (false);
+                    //  Handle unexpected protocol events
+                    if (!self->exception) {
+                        //  send invalid
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ send INVALID",
+                                self->log_prefix);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_INVALID);
+                        zccp_msg_send (&self->client.reply, self->server->router);
+                        self->client.reply = zccp_msg_new (0);
+                        zccp_msg_set_routing_id (self->client.reply, self->routing_id);
+                    }
+                    if (!self->exception) {
+                        //  terminate
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ terminate", self->log_prefix);
+                        self->next_event = terminate_event;
+                    }
                 }
                 break;
 
@@ -474,28 +476,56 @@ s_client_execute (s_client_t *self, int event)
                 else
                 if (self->event == request_event) {
                     if (!self->exception) {
-                        //  forward to everyone
+                        //  send reply
                         if (self->server->verbose)
-                            zsys_debug ("%s:         $ forward to everyone", self->log_prefix);
-                        forward_to_everyone (&self->client);
-                    }
-                }
-                else
-                if (self->event == reply_event) {
-                    if (!self->exception) {
-                        //  forward to everyone
-                        if (self->server->verbose)
-                            zsys_debug ("%s:         $ forward to everyone", self->log_prefix);
-                        forward_to_everyone (&self->client);
+                            zsys_debug ("%s:         $ send REPLY",
+                                self->log_prefix);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_REPLY);
+                        zccp_msg_send (&self->client.reply, self->server->router);
+                        self->client.reply = zccp_msg_new (0);
+                        zccp_msg_set_routing_id (self->client.reply, self->routing_id);
                     }
                 }
                 else {
-                    //  Handle unexpected internal events
-                    zsys_warning ("%s: unhandled event %s in %s",
-                        self->log_prefix,
-                        s_event_name [self->event],
-                        s_state_name [self->state]);
-                    assert (false);
+                    //  Handle unexpected protocol events
+                    if (!self->exception) {
+                        //  send invalid
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ send INVALID",
+                                self->log_prefix);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_INVALID);
+                        zccp_msg_send (&self->client.reply, self->server->router);
+                        self->client.reply = zccp_msg_new (0);
+                        zccp_msg_set_routing_id (self->client.reply, self->routing_id);
+                    }
+                    if (!self->exception) {
+                        //  terminate
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ terminate", self->log_prefix);
+                        self->next_event = terminate_event;
+                    }
+                }
+                break;
+
+            case external_state:
+                {
+                    //  Handle unexpected protocol events
+                    if (!self->exception) {
+                        //  send invalid
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ send INVALID",
+                                self->log_prefix);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_INVALID);
+                        zccp_msg_send (&self->client.reply, self->server->router);
+                        self->client.reply = zccp_msg_new (0);
+                        zccp_msg_set_routing_id (self->client.reply, self->routing_id);
+                    }
+                    if (!self->exception) {
+                        //  terminate
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ terminate", self->log_prefix);
+                        self->next_event = terminate_event;
+                    }
                 }
                 break;
         }

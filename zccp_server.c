@@ -115,12 +115,12 @@ forward_to_everyone (client_t *self)
 void
 zccp_server_test (bool verbose)
 {
-    printf (" * zccp_server: \n");
+    printf (" * zccp_server: ");
     if (verbose)
         printf ("\n");
 
     //  @selftest
-    zactor_t *server = zactor_new (zccp_server, "server");
+    zactor_t *server = zactor_new (zccp_server, "zccp_server_test");
     if (verbose)
         zstr_send (server, "VERBOSE");
     zstr_sendx (server, "BIND", "ipc://@/zccp_server", NULL);
@@ -130,14 +130,32 @@ zccp_server_test (bool verbose)
     zsock_set_rcvtimeo (client, 2000);
     zsock_connect (client, "ipc://@/zccp_server");
 
-    zccp_msg_t *request = zccp_msg_new (ZCCP_MSG_HELLO);
-    zccp_msg_send (&request, client);
+    zccp_msg_t *message;
     
-    zccp_msg_t *reply = zccp_msg_recv (client);
-    assert (reply);
-    assert (zccp_msg_id (reply) == ZCCP_MSG_READY);
-    zccp_msg_destroy (&reply);
+    zccp_msg_send_request (client, "START", NULL);
+    message = zccp_msg_recv (client);
+    assert (message);
+    assert (zccp_msg_id (message) == ZCCP_MSG_INVALID);
+    zccp_msg_destroy (&message);
     
+    zccp_msg_send_hello (client);
+    message = zccp_msg_recv (client);
+    assert (message);
+    assert (zccp_msg_id (message) == ZCCP_MSG_READY);
+    zccp_msg_destroy (&message);
+    
+    zccp_msg_send_request (client, "START", NULL);
+    message = zccp_msg_recv (client);
+    assert (message);
+    assert (zccp_msg_id (message) == ZCCP_MSG_REPLY);
+    zccp_msg_destroy (&message);
+
+    zccp_msg_send_hello (client);
+    message = zccp_msg_recv (client);
+    assert (message);
+    assert (zccp_msg_id (message) == ZCCP_MSG_INVALID);
+    zccp_msg_destroy (&message);
+
     zsock_destroy (&client);
     zactor_destroy (&server);
     //  @end

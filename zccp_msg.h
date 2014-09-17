@@ -38,6 +38,8 @@
     REPLY - Reply to a command request
         status              number 2    Success/failure status
         content             chunk       Event content
+
+    INVALID - Client sent a message that was not valid at this time
 */
 
 
@@ -47,6 +49,7 @@
 #define ZCCP_MSG_PUBLISH                    4
 #define ZCCP_MSG_REQUEST                    5
 #define ZCCP_MSG_REPLY                      6
+#define ZCCP_MSG_INVALID                    7
 
 #ifdef __cplusplus
 extern "C" {
@@ -126,6 +129,11 @@ zmsg_t *
         uint16_t status,
         zchunk_t *content);
 
+//  Encode the INVALID 
+zmsg_t *
+    zccp_msg_encode_invalid (
+);
+
 
 //  Send the HELLO to the output in one step
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.
@@ -163,6 +171,11 @@ int
     zccp_msg_send_reply (void *output,
         uint16_t status,
         zchunk_t *content);
+    
+//  Send the INVALID to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+int
+    zccp_msg_send_invalid (void *output);
     
 //  Duplicate the zccp_msg message
 zccp_msg_t *

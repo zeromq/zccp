@@ -44,4 +44,8 @@
         <field name = "status" type = "number" size = "2">Success/failure status</field>
         <field name = "content" type = "chunk">Event content</field>
     </message>
+    
+    <message name = "invalid">
+        Client sent a message that was not valid at this time
+    </message>
 </class>
