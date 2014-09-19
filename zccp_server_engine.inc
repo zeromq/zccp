@@ -15,7 +15,7 @@
 */
 
 
-//  ---------------------------------------------------------------------
+//  ---------------------------------------------------------------------------
 //  State machine constants
 
 typedef enum {
@@ -30,9 +30,10 @@ typedef enum {
     hello_event = 1,
     subscribe_event = 2,
     publish_event = 3,
-    request_event = 4,
+    direct_event = 4,
     forward_event = 5,
-    goodbye_event = 6
+    goodbye_event = 6,
+    expired_event = 7
 } event_t;
 
 //  Names for state machine logging and error reporting
@@ -50,13 +51,14 @@ s_event_name [] = {
     "HELLO",
     "SUBSCRIBE",
     "PUBLISH",
-    "REQUEST",
+    "DIRECT",
     "forward",
-    "GOODBYE"
+    "GOODBYE",
+    "expired"
 };
  
 
-//  ---------------------------------------------------------------------
+//  ---------------------------------------------------------------------------
 //  Context for the whole server task. This embeds the application-level
 //  server context at its start (the entire structure, not a reference),
 //  so we can cast a pointer between server_t and s_server_t arbitrarily.
@@ -76,7 +78,7 @@ typedef struct {
 } s_server_t;
 
 
-//  ---------------------------------------------------------------------
+//  ---------------------------------------------------------------------------
 //  Context for each connected client. This embeds the application-level
 //  client context at its start (the entire structure, not a reference),
 //  so we can cast a pointer between client_t and s_client_t arbitrarily.
@@ -121,7 +123,7 @@ static void
 static void
     get_content_to_publish (client_t *self);
 
-//  ---------------------------------------------------------------------
+//  ---------------------------------------------------------------------------
 //  These methods are an internal API for actions
 
 //  Set the next event, needed in at least one action in an internal
@@ -276,7 +278,7 @@ s_satisfy_pedantic_compilers (void)
 }
 
 
-//  ---------------------------------------------------------------------
+//  ---------------------------------------------------------------------------
 //  Generic methods on protocol messages
 //  TODO: replace with lookup table, since ID is one byte
 
@@ -288,17 +290,17 @@ s_protocol_event (zccp_msg_t *request)
         case ZCCP_MSG_HELLO:
             return hello_event;
             break;
-        case ZCCP_MSG_GOODBYE:
-            return goodbye_event;
-            break;
         case ZCCP_MSG_SUBSCRIBE:
             return subscribe_event;
             break;
         case ZCCP_MSG_PUBLISH:
             return publish_event;
             break;
-        case ZCCP_MSG_REQUEST:
-            return request_event;
+        case ZCCP_MSG_DIRECT:
+            return direct_event;
+            break;
+        case ZCCP_MSG_GOODBYE:
+            return goodbye_event;
             break;
         default:
             //  Invalid zccp_msg_t
@@ -307,7 +309,7 @@ s_protocol_event (zccp_msg_t *request)
 }
 
 
-//  ---------------------------------------------------------------------
+//  ---------------------------------------------------------------------------
 //  Client methods
 
 static s_client_t *
@@ -441,11 +443,11 @@ s_client_execute (s_client_t *self, int event)
                         register_new_client (&self->client);
                     }
                     if (!self->exception) {
-                        //  send ready
+                        //  send hello_ok
                         if (self->server->verbose)
-                            zsys_debug ("%s:         $ send READY",
+                            zsys_debug ("%s:         $ send HELLO_OK",
                                 self->log_prefix);
-                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_READY);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_HELLO_OK);
                         zccp_msg_send (&self->client.reply, self->server->router);
                         self->client.reply = zccp_msg_new (0);
                         zccp_msg_set_routing_id (self->client.reply, self->routing_id);
@@ -456,15 +458,24 @@ s_client_execute (s_client_t *self, int event)
                 else
                 if (self->event == goodbye_event) {
                     if (!self->exception) {
-                        //  send ready
+                        //  send goodbye_ok
                         if (self->server->verbose)
-                            zsys_debug ("%s:         $ send READY",
+                            zsys_debug ("%s:         $ send GOODBYE_OK",
                                 self->log_prefix);
-                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_READY);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_GOODBYE_OK);
                         zccp_msg_send (&self->client.reply, self->server->router);
                         self->client.reply = zccp_msg_new (0);
                         zccp_msg_set_routing_id (self->client.reply, self->routing_id);
                     }
+                    if (!self->exception) {
+                        //  terminate
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ terminate", self->log_prefix);
+                        self->next_event = terminate_event;
+                    }
+                }
+                else
+                if (self->event == expired_event) {
                     if (!self->exception) {
                         //  terminate
                         if (self->server->verbose)
@@ -512,17 +523,7 @@ s_client_execute (s_client_t *self, int event)
                     }
                 }
                 else
-                if (self->event == request_event) {
-                    if (!self->exception) {
-                        //  send reply
-                        if (self->server->verbose)
-                            zsys_debug ("%s:         $ send REPLY",
-                                self->log_prefix);
-                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_REPLY);
-                        zccp_msg_send (&self->client.reply, self->server->router);
-                        self->client.reply = zccp_msg_new (0);
-                        zccp_msg_set_routing_id (self->client.reply, self->routing_id);
-                    }
+                if (self->event == direct_event) {
                 }
                 else
                 if (self->event == forward_event) {
@@ -546,15 +547,24 @@ s_client_execute (s_client_t *self, int event)
                 else
                 if (self->event == goodbye_event) {
                     if (!self->exception) {
-                        //  send ready
+                        //  send goodbye_ok
                         if (self->server->verbose)
-                            zsys_debug ("%s:         $ send READY",
+                            zsys_debug ("%s:         $ send GOODBYE_OK",
                                 self->log_prefix);
-                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_READY);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_GOODBYE_OK);
                         zccp_msg_send (&self->client.reply, self->server->router);
                         self->client.reply = zccp_msg_new (0);
                         zccp_msg_set_routing_id (self->client.reply, self->routing_id);
                     }
+                    if (!self->exception) {
+                        //  terminate
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ terminate", self->log_prefix);
+                        self->next_event = terminate_event;
+                    }
+                }
+                else
+                if (self->event == expired_event) {
                     if (!self->exception) {
                         //  terminate
                         if (self->server->verbose)
@@ -586,15 +596,24 @@ s_client_execute (s_client_t *self, int event)
             case external_state:
                 if (self->event == goodbye_event) {
                     if (!self->exception) {
-                        //  send ready
+                        //  send goodbye_ok
                         if (self->server->verbose)
-                            zsys_debug ("%s:         $ send READY",
+                            zsys_debug ("%s:         $ send GOODBYE_OK",
                                 self->log_prefix);
-                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_READY);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_GOODBYE_OK);
                         zccp_msg_send (&self->client.reply, self->server->router);
                         self->client.reply = zccp_msg_new (0);
                         zccp_msg_set_routing_id (self->client.reply, self->routing_id);
                     }
+                    if (!self->exception) {
+                        //  terminate
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ terminate", self->log_prefix);
+                        self->next_event = terminate_event;
+                    }
+                }
+                else
+                if (self->event == expired_event) {
                     if (!self->exception) {
                         //  terminate
                         if (self->server->verbose)
@@ -646,6 +665,16 @@ s_client_execute (s_client_t *self, int event)
                 self->next_event = s_client_filter_mailbox (self);
         }
     }
+}
+
+//  zloop callback when client inactivity timer expires
+
+static int
+s_client_expired (zloop_t *loop, int timer_id, void *argument)
+{
+    s_client_t *self = (s_client_t *) argument;
+    s_client_execute (self, expired_event);
+    return 0;
 }
 
 //  zloop callback when client wakeup timer expires
@@ -853,6 +882,13 @@ s_server_client_message (zloop_t *loop, zsock_t *reader, void *argument)
     }
     free (hashkey);
 
+    //  Any input from client counts as activity
+    if (client->expiry_timer)
+        zloop_timer_end (self->loop, client->expiry_timer);
+    //  Reset expiry timer
+    client->expiry_timer = zloop_timer (
+        self->loop, self->timeout, 1, s_client_expired, client);
+        
     //  Queue request and possibly pass it to client state machine
     zlist_append (client->mailbox, msg);
     event_t event = s_client_filter_mailbox (client);
@@ -879,7 +915,7 @@ s_watch_server_config (zloop_t *loop, int timer_id, void *argument)
 }
 
 
-//  ---------------------------------------------------------------------
+//  ---------------------------------------------------------------------------
 //  This is the server actor, which polls its two sockets and processes
 //  incoming messages
 

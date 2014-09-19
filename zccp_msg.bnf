@@ -1,59 +1,77 @@
 The following ABNF grammar defines the ZeroMQ Command & Control Protocol:
 
-    ZCCP = greeting traffic
+    ZCCP = greeting traffic signoff
     
-    greeting = C:hello S:ready
-    traffic = C:subscribe / C:publish / S:deliver
-            / request / reply
-            / C:goodbye S:ready
+    greeting = C:HELLO S:HELLO-OK
+    
+    traffic = C:SUBSCRIBE / C:PUBLISH / C:DIRECT /
+              S:DELIVER
+              
+    signoff = C:GOODBYE S:GOODBYE-OK
 
-    ;         Client says hello to server and provides its identifier.
-    hello           = signature %d1 identifier
+    ;         Client greets the server and provides its identifier.
+    hello           = signature %d1 identifier headers
     signature       = %xAA %xA10            ; two octets
     identifier      = string                ; Client identifier
+    headers         = dictionary            ; Client properties
 
-    ;         Client says goodbye to server.
-    goodbye         = signature %d2
+    ;         Server confirms client
+    hello_ok        = signature %d2 headers
+    headers         = dictionary            ; Server properties
 
-    ;         Server confirms client HELLO or GOODBYE
-    ready           = signature %d3
-
-    ;         Client subscribes to some set of notifications
-    subscribe       = signature %d4 expression
+    ;         Client subscribes to some set of messages
+    subscribe       = signature %d3 expression headers
     expression      = string                ; Regular expression
+    headers         = dictionary            ; Subscription options
 
-    ;         Client publishes a notification
-    publish         = signature %d5 header content
-    header          = string                ; Header, for matching
-    content         = chunk                 ; Content
+    ;         Client publishes a message to the server
+    publish         = signature %d4 address headers content
+    address         = string                ; Destination routing key
+    headers         = dictionary            ; Content header fields
+    content         = msg                   ; Content, as multipart message
 
-    ;         Server delivers notification to client
-    deliver         = signature %d6 origin header content
-    origin          = string                ; A client identifier
-    header          = string                ; Header
-    content         = chunk                 ; Content
+    ;         Client sends a message to a specific client
+    direct          = signature %d5 address headers content
+    address         = string                ; Destination client identifier
+    headers         = dictionary            ; Content header fields
+    content         = msg                   ; Content, as multipart message
 
-    ;         Request some action
-    request         = signature %d7 method content
-    method          = string                ; Requested method
-    content         = chunk                 ; Content
+    ;         Server delivers a message to client
+    deliver         = signature %d6 sender address headers content
+    sender          = string                ; Originating client
+    address         = string                ; Destination address
+    headers         = dictionary            ; Content header fields
+    content         = msg                   ; Content, as multipart message
 
-    ;         Reply to a command request
-    reply           = signature %d8 status content
-    status          = number-2              ; Success/failure status
-    content         = chunk                 ; Content
+    ;         Client says goodbye to server
+    goodbye         = signature %d7
+
+    ;         Server confirms client signoff
+    goodbye_ok      = signature %d8 headers
+    headers         = dictionary            ; Session statistics
+
+    ;         Client or server pings the other party
+    ping            = signature %d9
+
+    ;         Reply to a PING
+    ping_ok         = signature %d10
 
     ;         Client sent a message that was not valid at this time
-    invalid         = signature %d9
+    invalid         = signature %d11
 
-    ; A chunk has 4-octet length + binary contents
-    chunk           = number-4 *OCTET
+    ; A list of name/value pairs
+    dictionary      = dict-count *( dict-name dict-value )
+    dict-count      = number-4
+    dict-value      = longstr
+    dict-name       = string
+
+    ; A msg is zero or more distinct frames
+    msg             = *frame
 
     ; Strings are always length + text contents
     string          = number-1 *VCHAR
+    longstr         = number-4 *VCHAR
 
     ; Numbers are unsigned integers in network byte order
     number-1        = 1OCTET
-    number-2        = 2OCTET
     number-4        = 4OCTET
-

@@ -34,12 +34,12 @@ struct _zccp_msg_t {
     byte *needle;                       //  Read/write pointer for serialization
     byte *ceiling;                      //  Valid upper limit for read pointer
     char *identifier;                   //  Client identifier
+    zhash_t *headers;                   //  Client properties
+    size_t headers_bytes;               //  Size of dictionary content
     char *expression;                   //  Regular expression
-    char *header;                       //  Header, for matching
-    zchunk_t *content;                  //  Content
-    char *origin;                       //  A client identifier
-    char *method;                       //  Requested method
-    uint16_t status;                    //  Success/failure status
+    char *address;                      //  Destination routing key
+    zmsg_t *content;                    //  Content, as multipart message
+    char *sender;                       //  Originating client
 };
 
 //  --------------------------------------------------------------------------
@@ -203,11 +203,11 @@ zccp_msg_destroy (zccp_msg_t **self_p)
         //  Free class properties
         zframe_destroy (&self->routing_id);
         free (self->identifier);
+        zhash_destroy (&self->headers);
         free (self->expression);
-        free (self->header);
-        zchunk_destroy (&self->content);
-        free (self->origin);
-        free (self->method);
+        free (self->address);
+        zmsg_destroy (&self->content);
+        free (self->sender);
 
         //  Free object itself
         free (self);
@@ -249,65 +249,151 @@ zccp_msg_decode (zmsg_t **msg_p)
     switch (self->id) {
         case ZCCP_MSG_HELLO:
             GET_STRING (self->identifier);
+            {
+                size_t hash_size;
+                GET_NUMBER4 (hash_size);
+                self->headers = zhash_new ();
+                zhash_autofree (self->headers);
+                while (hash_size--) {
+                    char *key, *value;
+                    GET_STRING (key);
+                    GET_LONGSTR (value);
+                    zhash_insert (self->headers, key, value);
+                    free (key);
+                    free (value);
+                }
+            }
+            break;
+
+        case ZCCP_MSG_HELLO_OK:
+            {
+                size_t hash_size;
+                GET_NUMBER4 (hash_size);
+                self->headers = zhash_new ();
+                zhash_autofree (self->headers);
+                while (hash_size--) {
+                    char *key, *value;
+                    GET_STRING (key);
+                    GET_LONGSTR (value);
+                    zhash_insert (self->headers, key, value);
+                    free (key);
+                    free (value);
+                }
+            }
+            break;
+
+        case ZCCP_MSG_SUBSCRIBE:
+            GET_STRING (self->expression);
+            {
+                size_t hash_size;
+                GET_NUMBER4 (hash_size);
+                self->headers = zhash_new ();
+                zhash_autofree (self->headers);
+                while (hash_size--) {
+                    char *key, *value;
+                    GET_STRING (key);
+                    GET_LONGSTR (value);
+                    zhash_insert (self->headers, key, value);
+                    free (key);
+                    free (value);
+                }
+            }
+            break;
+
+        case ZCCP_MSG_PUBLISH:
+            GET_STRING (self->address);
+            {
+                size_t hash_size;
+                GET_NUMBER4 (hash_size);
+                self->headers = zhash_new ();
+                zhash_autofree (self->headers);
+                while (hash_size--) {
+                    char *key, *value;
+                    GET_STRING (key);
+                    GET_LONGSTR (value);
+                    zhash_insert (self->headers, key, value);
+                    free (key);
+                    free (value);
+                }
+            }
+            //  Get zero or more remaining frames, leaving current
+            //  frame untouched
+            self->content = zmsg_new ();
+            while (zmsg_size (msg))
+                zmsg_add (self->content, zmsg_pop (msg));
+            break;
+
+        case ZCCP_MSG_DIRECT:
+            GET_STRING (self->address);
+            {
+                size_t hash_size;
+                GET_NUMBER4 (hash_size);
+                self->headers = zhash_new ();
+                zhash_autofree (self->headers);
+                while (hash_size--) {
+                    char *key, *value;
+                    GET_STRING (key);
+                    GET_LONGSTR (value);
+                    zhash_insert (self->headers, key, value);
+                    free (key);
+                    free (value);
+                }
+            }
+            //  Get zero or more remaining frames, leaving current
+            //  frame untouched
+            self->content = zmsg_new ();
+            while (zmsg_size (msg))
+                zmsg_add (self->content, zmsg_pop (msg));
+            break;
+
+        case ZCCP_MSG_DELIVER:
+            GET_STRING (self->sender);
+            GET_STRING (self->address);
+            {
+                size_t hash_size;
+                GET_NUMBER4 (hash_size);
+                self->headers = zhash_new ();
+                zhash_autofree (self->headers);
+                while (hash_size--) {
+                    char *key, *value;
+                    GET_STRING (key);
+                    GET_LONGSTR (value);
+                    zhash_insert (self->headers, key, value);
+                    free (key);
+                    free (value);
+                }
+            }
+            //  Get zero or more remaining frames, leaving current
+            //  frame untouched
+            self->content = zmsg_new ();
+            while (zmsg_size (msg))
+                zmsg_add (self->content, zmsg_pop (msg));
             break;
 
         case ZCCP_MSG_GOODBYE:
             break;
 
-        case ZCCP_MSG_READY:
-            break;
-
-        case ZCCP_MSG_SUBSCRIBE:
-            GET_STRING (self->expression);
-            break;
-
-        case ZCCP_MSG_PUBLISH:
-            GET_STRING (self->header);
+        case ZCCP_MSG_GOODBYE_OK:
             {
-                size_t chunk_size;
-                GET_NUMBER4 (chunk_size);
-                if (self->needle + chunk_size > (self->ceiling))
-                    goto malformed;
-                self->content = zchunk_new (self->needle, chunk_size);
-                self->needle += chunk_size;
+                size_t hash_size;
+                GET_NUMBER4 (hash_size);
+                self->headers = zhash_new ();
+                zhash_autofree (self->headers);
+                while (hash_size--) {
+                    char *key, *value;
+                    GET_STRING (key);
+                    GET_LONGSTR (value);
+                    zhash_insert (self->headers, key, value);
+                    free (key);
+                    free (value);
+                }
             }
             break;
 
-        case ZCCP_MSG_DELIVER:
-            GET_STRING (self->origin);
-            GET_STRING (self->header);
-            {
-                size_t chunk_size;
-                GET_NUMBER4 (chunk_size);
-                if (self->needle + chunk_size > (self->ceiling))
-                    goto malformed;
-                self->content = zchunk_new (self->needle, chunk_size);
-                self->needle += chunk_size;
-            }
+        case ZCCP_MSG_PING:
             break;
 
-        case ZCCP_MSG_REQUEST:
-            GET_STRING (self->method);
-            {
-                size_t chunk_size;
-                GET_NUMBER4 (chunk_size);
-                if (self->needle + chunk_size > (self->ceiling))
-                    goto malformed;
-                self->content = zchunk_new (self->needle, chunk_size);
-                self->needle += chunk_size;
-            }
-            break;
-
-        case ZCCP_MSG_REPLY:
-            GET_NUMBER2 (self->status);
-            {
-                size_t chunk_size;
-                GET_NUMBER4 (chunk_size);
-                if (self->needle + chunk_size > (self->ceiling))
-                    goto malformed;
-                self->content = zchunk_new (self->needle, chunk_size);
-                self->needle += chunk_size;
-            }
+        case ZCCP_MSG_PING_OK:
             break;
 
         case ZCCP_MSG_INVALID:
@@ -352,12 +438,35 @@ zccp_msg_encode (zccp_msg_t **self_p)
             frame_size++;       //  Size is one octet
             if (self->identifier)
                 frame_size += strlen (self->identifier);
+            //  headers is an array of key=value strings
+            frame_size += 4;    //  Size is 4 octets
+            if (self->headers) {
+                self->headers_bytes = 0;
+                //  Add up size of dictionary contents
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    self->headers_bytes += 1 + strlen (zhash_cursor (self->headers));
+                    self->headers_bytes += 4 + strlen (item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            frame_size += self->headers_bytes;
             break;
             
-        case ZCCP_MSG_GOODBYE:
-            break;
-            
-        case ZCCP_MSG_READY:
+        case ZCCP_MSG_HELLO_OK:
+            //  headers is an array of key=value strings
+            frame_size += 4;    //  Size is 4 octets
+            if (self->headers) {
+                self->headers_bytes = 0;
+                //  Add up size of dictionary contents
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    self->headers_bytes += 1 + strlen (zhash_cursor (self->headers));
+                    self->headers_bytes += 4 + strlen (item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            frame_size += self->headers_bytes;
             break;
             
         case ZCCP_MSG_SUBSCRIBE:
@@ -365,52 +474,108 @@ zccp_msg_encode (zccp_msg_t **self_p)
             frame_size++;       //  Size is one octet
             if (self->expression)
                 frame_size += strlen (self->expression);
+            //  headers is an array of key=value strings
+            frame_size += 4;    //  Size is 4 octets
+            if (self->headers) {
+                self->headers_bytes = 0;
+                //  Add up size of dictionary contents
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    self->headers_bytes += 1 + strlen (zhash_cursor (self->headers));
+                    self->headers_bytes += 4 + strlen (item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            frame_size += self->headers_bytes;
             break;
             
         case ZCCP_MSG_PUBLISH:
-            //  header is a string with 1-byte length
+            //  address is a string with 1-byte length
             frame_size++;       //  Size is one octet
-            if (self->header)
-                frame_size += strlen (self->header);
-            //  content is a chunk with 4-byte length
-            frame_size += 4;
-            if (self->content)
-                frame_size += zchunk_size (self->content);
+            if (self->address)
+                frame_size += strlen (self->address);
+            //  headers is an array of key=value strings
+            frame_size += 4;    //  Size is 4 octets
+            if (self->headers) {
+                self->headers_bytes = 0;
+                //  Add up size of dictionary contents
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    self->headers_bytes += 1 + strlen (zhash_cursor (self->headers));
+                    self->headers_bytes += 4 + strlen (item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            frame_size += self->headers_bytes;
+            break;
+            
+        case ZCCP_MSG_DIRECT:
+            //  address is a string with 1-byte length
+            frame_size++;       //  Size is one octet
+            if (self->address)
+                frame_size += strlen (self->address);
+            //  headers is an array of key=value strings
+            frame_size += 4;    //  Size is 4 octets
+            if (self->headers) {
+                self->headers_bytes = 0;
+                //  Add up size of dictionary contents
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    self->headers_bytes += 1 + strlen (zhash_cursor (self->headers));
+                    self->headers_bytes += 4 + strlen (item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            frame_size += self->headers_bytes;
             break;
             
         case ZCCP_MSG_DELIVER:
-            //  origin is a string with 1-byte length
+            //  sender is a string with 1-byte length
             frame_size++;       //  Size is one octet
-            if (self->origin)
-                frame_size += strlen (self->origin);
-            //  header is a string with 1-byte length
+            if (self->sender)
+                frame_size += strlen (self->sender);
+            //  address is a string with 1-byte length
             frame_size++;       //  Size is one octet
-            if (self->header)
-                frame_size += strlen (self->header);
-            //  content is a chunk with 4-byte length
-            frame_size += 4;
-            if (self->content)
-                frame_size += zchunk_size (self->content);
+            if (self->address)
+                frame_size += strlen (self->address);
+            //  headers is an array of key=value strings
+            frame_size += 4;    //  Size is 4 octets
+            if (self->headers) {
+                self->headers_bytes = 0;
+                //  Add up size of dictionary contents
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    self->headers_bytes += 1 + strlen (zhash_cursor (self->headers));
+                    self->headers_bytes += 4 + strlen (item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            frame_size += self->headers_bytes;
             break;
             
-        case ZCCP_MSG_REQUEST:
-            //  method is a string with 1-byte length
-            frame_size++;       //  Size is one octet
-            if (self->method)
-                frame_size += strlen (self->method);
-            //  content is a chunk with 4-byte length
-            frame_size += 4;
-            if (self->content)
-                frame_size += zchunk_size (self->content);
+        case ZCCP_MSG_GOODBYE:
             break;
             
-        case ZCCP_MSG_REPLY:
-            //  status is a 2-byte integer
-            frame_size += 2;
-            //  content is a chunk with 4-byte length
-            frame_size += 4;
-            if (self->content)
-                frame_size += zchunk_size (self->content);
+        case ZCCP_MSG_GOODBYE_OK:
+            //  headers is an array of key=value strings
+            frame_size += 4;    //  Size is 4 octets
+            if (self->headers) {
+                self->headers_bytes = 0;
+                //  Add up size of dictionary contents
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    self->headers_bytes += 1 + strlen (zhash_cursor (self->headers));
+                    self->headers_bytes += 4 + strlen (item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            frame_size += self->headers_bytes;
+            break;
+            
+        case ZCCP_MSG_PING:
+            break;
+            
+        case ZCCP_MSG_PING_OK:
             break;
             
         case ZCCP_MSG_INVALID:
@@ -434,12 +599,31 @@ zccp_msg_encode (zccp_msg_t **self_p)
             }
             else
                 PUT_NUMBER1 (0);    //  Empty string
+            if (self->headers) {
+                PUT_NUMBER4 (zhash_size (self->headers));
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    PUT_STRING (zhash_cursor (self->headers));
+                    PUT_LONGSTR (item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            else
+                PUT_NUMBER4 (0);    //  Empty dictionary
             break;
 
-        case ZCCP_MSG_GOODBYE:
-            break;
-
-        case ZCCP_MSG_READY:
+        case ZCCP_MSG_HELLO_OK:
+            if (self->headers) {
+                PUT_NUMBER4 (zhash_size (self->headers));
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    PUT_STRING (zhash_cursor (self->headers));
+                    PUT_LONGSTR (item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            else
+                PUT_NUMBER4 (0);    //  Empty dictionary
             break;
 
         case ZCCP_MSG_SUBSCRIBE:
@@ -448,75 +632,102 @@ zccp_msg_encode (zccp_msg_t **self_p)
             }
             else
                 PUT_NUMBER1 (0);    //  Empty string
+            if (self->headers) {
+                PUT_NUMBER4 (zhash_size (self->headers));
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    PUT_STRING (zhash_cursor (self->headers));
+                    PUT_LONGSTR (item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            else
+                PUT_NUMBER4 (0);    //  Empty dictionary
             break;
 
         case ZCCP_MSG_PUBLISH:
-            if (self->header) {
-                PUT_STRING (self->header);
+            if (self->address) {
+                PUT_STRING (self->address);
             }
             else
                 PUT_NUMBER1 (0);    //  Empty string
-            if (self->content) {
-                PUT_NUMBER4 (zchunk_size (self->content));
-                memcpy (self->needle,
-                        zchunk_data (self->content),
-                        zchunk_size (self->content));
-                self->needle += zchunk_size (self->content);
+            if (self->headers) {
+                PUT_NUMBER4 (zhash_size (self->headers));
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    PUT_STRING (zhash_cursor (self->headers));
+                    PUT_LONGSTR (item);
+                    item = (char *) zhash_next (self->headers);
+                }
             }
             else
-                PUT_NUMBER4 (0);    //  Empty chunk
+                PUT_NUMBER4 (0);    //  Empty dictionary
+            break;
+
+        case ZCCP_MSG_DIRECT:
+            if (self->address) {
+                PUT_STRING (self->address);
+            }
+            else
+                PUT_NUMBER1 (0);    //  Empty string
+            if (self->headers) {
+                PUT_NUMBER4 (zhash_size (self->headers));
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    PUT_STRING (zhash_cursor (self->headers));
+                    PUT_LONGSTR (item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            else
+                PUT_NUMBER4 (0);    //  Empty dictionary
             break;
 
         case ZCCP_MSG_DELIVER:
-            if (self->origin) {
-                PUT_STRING (self->origin);
+            if (self->sender) {
+                PUT_STRING (self->sender);
             }
             else
                 PUT_NUMBER1 (0);    //  Empty string
-            if (self->header) {
-                PUT_STRING (self->header);
+            if (self->address) {
+                PUT_STRING (self->address);
             }
             else
                 PUT_NUMBER1 (0);    //  Empty string
-            if (self->content) {
-                PUT_NUMBER4 (zchunk_size (self->content));
-                memcpy (self->needle,
-                        zchunk_data (self->content),
-                        zchunk_size (self->content));
-                self->needle += zchunk_size (self->content);
+            if (self->headers) {
+                PUT_NUMBER4 (zhash_size (self->headers));
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    PUT_STRING (zhash_cursor (self->headers));
+                    PUT_LONGSTR (item);
+                    item = (char *) zhash_next (self->headers);
+                }
             }
             else
-                PUT_NUMBER4 (0);    //  Empty chunk
+                PUT_NUMBER4 (0);    //  Empty dictionary
             break;
 
-        case ZCCP_MSG_REQUEST:
-            if (self->method) {
-                PUT_STRING (self->method);
-            }
-            else
-                PUT_NUMBER1 (0);    //  Empty string
-            if (self->content) {
-                PUT_NUMBER4 (zchunk_size (self->content));
-                memcpy (self->needle,
-                        zchunk_data (self->content),
-                        zchunk_size (self->content));
-                self->needle += zchunk_size (self->content);
-            }
-            else
-                PUT_NUMBER4 (0);    //  Empty chunk
+        case ZCCP_MSG_GOODBYE:
             break;
 
-        case ZCCP_MSG_REPLY:
-            PUT_NUMBER2 (self->status);
-            if (self->content) {
-                PUT_NUMBER4 (zchunk_size (self->content));
-                memcpy (self->needle,
-                        zchunk_data (self->content),
-                        zchunk_size (self->content));
-                self->needle += zchunk_size (self->content);
+        case ZCCP_MSG_GOODBYE_OK:
+            if (self->headers) {
+                PUT_NUMBER4 (zhash_size (self->headers));
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    PUT_STRING (zhash_cursor (self->headers));
+                    PUT_LONGSTR (item);
+                    item = (char *) zhash_next (self->headers);
+                }
             }
             else
-                PUT_NUMBER4 (0);    //  Empty chunk
+                PUT_NUMBER4 (0);    //  Empty dictionary
+            break;
+
+        case ZCCP_MSG_PING:
+            break;
+
+        case ZCCP_MSG_PING_OK:
             break;
 
         case ZCCP_MSG_INVALID:
@@ -528,6 +739,30 @@ zccp_msg_encode (zccp_msg_t **self_p)
         zmsg_destroy (&msg);
         zccp_msg_destroy (self_p);
         return NULL;
+    }
+    //  Now send the content field if set
+    if (self->id == ZCCP_MSG_PUBLISH) {
+        zframe_t *content_part = zmsg_pop (self->content);
+        while (content_part) {
+            zmsg_append (msg, &content_part);
+            content_part = zmsg_pop (self->content);
+        }
+    }
+    //  Now send the content field if set
+    if (self->id == ZCCP_MSG_DIRECT) {
+        zframe_t *content_part = zmsg_pop (self->content);
+        while (content_part) {
+            zmsg_append (msg, &content_part);
+            content_part = zmsg_pop (self->content);
+        }
+    }
+    //  Now send the content field if set
+    if (self->id == ZCCP_MSG_DELIVER) {
+        zframe_t *content_part = zmsg_pop (self->content);
+        while (content_part) {
+            zmsg_append (msg, &content_part);
+            content_part = zmsg_pop (self->content);
+        }
     }
     //  Destroy zccp_msg object
     zccp_msg_destroy (self_p);
@@ -641,10 +876,102 @@ zccp_msg_send_again (zccp_msg_t *self, void *output)
 
 zmsg_t * 
 zccp_msg_encode_hello (
-    const char *identifier)
+    const char *identifier,
+    zhash_t *headers)
 {
     zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_HELLO);
     zccp_msg_set_identifier (self, identifier);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    return zccp_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode HELLO_OK message
+
+zmsg_t * 
+zccp_msg_encode_hello_ok (
+    zhash_t *headers)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_HELLO_OK);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    return zccp_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode SUBSCRIBE message
+
+zmsg_t * 
+zccp_msg_encode_subscribe (
+    const char *expression,
+    zhash_t *headers)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_SUBSCRIBE);
+    zccp_msg_set_expression (self, expression);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    return zccp_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode PUBLISH message
+
+zmsg_t * 
+zccp_msg_encode_publish (
+    const char *address,
+    zhash_t *headers,
+    zmsg_t *content)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_PUBLISH);
+    zccp_msg_set_address (self, address);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    zmsg_t *content_copy = zmsg_dup (content);
+    zccp_msg_set_content (self, &content_copy);
+    return zccp_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode DIRECT message
+
+zmsg_t * 
+zccp_msg_encode_direct (
+    const char *address,
+    zhash_t *headers,
+    zmsg_t *content)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_DIRECT);
+    zccp_msg_set_address (self, address);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    zmsg_t *content_copy = zmsg_dup (content);
+    zccp_msg_set_content (self, &content_copy);
+    return zccp_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode DELIVER message
+
+zmsg_t * 
+zccp_msg_encode_deliver (
+    const char *sender,
+    const char *address,
+    zhash_t *headers,
+    zmsg_t *content)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_DELIVER);
+    zccp_msg_set_sender (self, sender);
+    zccp_msg_set_address (self, address);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    zmsg_t *content_copy = zmsg_dup (content);
+    zccp_msg_set_content (self, &content_copy);
     return zccp_msg_encode (&self);
 }
 
@@ -662,92 +989,39 @@ zccp_msg_encode_goodbye (
 
 
 //  --------------------------------------------------------------------------
-//  Encode READY message
+//  Encode GOODBYE_OK message
 
 zmsg_t * 
-zccp_msg_encode_ready (
+zccp_msg_encode_goodbye_ok (
+    zhash_t *headers)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_GOODBYE_OK);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    return zccp_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode PING message
+
+zmsg_t * 
+zccp_msg_encode_ping (
 )
 {
-    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_READY);
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_PING);
     return zccp_msg_encode (&self);
 }
 
 
 //  --------------------------------------------------------------------------
-//  Encode SUBSCRIBE message
+//  Encode PING_OK message
 
 zmsg_t * 
-zccp_msg_encode_subscribe (
-    const char *expression)
+zccp_msg_encode_ping_ok (
+)
 {
-    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_SUBSCRIBE);
-    zccp_msg_set_expression (self, expression);
-    return zccp_msg_encode (&self);
-}
-
-
-//  --------------------------------------------------------------------------
-//  Encode PUBLISH message
-
-zmsg_t * 
-zccp_msg_encode_publish (
-    const char *header,
-    zchunk_t *content)
-{
-    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_PUBLISH);
-    zccp_msg_set_header (self, header);
-    zchunk_t *content_copy = zchunk_dup (content);
-    zccp_msg_set_content (self, &content_copy);
-    return zccp_msg_encode (&self);
-}
-
-
-//  --------------------------------------------------------------------------
-//  Encode DELIVER message
-
-zmsg_t * 
-zccp_msg_encode_deliver (
-    const char *origin,
-    const char *header,
-    zchunk_t *content)
-{
-    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_DELIVER);
-    zccp_msg_set_origin (self, origin);
-    zccp_msg_set_header (self, header);
-    zchunk_t *content_copy = zchunk_dup (content);
-    zccp_msg_set_content (self, &content_copy);
-    return zccp_msg_encode (&self);
-}
-
-
-//  --------------------------------------------------------------------------
-//  Encode REQUEST message
-
-zmsg_t * 
-zccp_msg_encode_request (
-    const char *method,
-    zchunk_t *content)
-{
-    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_REQUEST);
-    zccp_msg_set_method (self, method);
-    zchunk_t *content_copy = zchunk_dup (content);
-    zccp_msg_set_content (self, &content_copy);
-    return zccp_msg_encode (&self);
-}
-
-
-//  --------------------------------------------------------------------------
-//  Encode REPLY message
-
-zmsg_t * 
-zccp_msg_encode_reply (
-    uint16_t status,
-    zchunk_t *content)
-{
-    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_REPLY);
-    zccp_msg_set_status (self, status);
-    zchunk_t *content_copy = zchunk_dup (content);
-    zccp_msg_set_content (self, &content_copy);
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_PING_OK);
     return zccp_msg_encode (&self);
 }
 
@@ -770,10 +1044,107 @@ zccp_msg_encode_invalid (
 int
 zccp_msg_send_hello (
     void *output,
-    const char *identifier)
+    const char *identifier,
+    zhash_t *headers)
 {
     zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_HELLO);
     zccp_msg_set_identifier (self, identifier);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    return zccp_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the HELLO_OK to the socket in one step
+
+int
+zccp_msg_send_hello_ok (
+    void *output,
+    zhash_t *headers)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_HELLO_OK);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    return zccp_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the SUBSCRIBE to the socket in one step
+
+int
+zccp_msg_send_subscribe (
+    void *output,
+    const char *expression,
+    zhash_t *headers)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_SUBSCRIBE);
+    zccp_msg_set_expression (self, expression);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    return zccp_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the PUBLISH to the socket in one step
+
+int
+zccp_msg_send_publish (
+    void *output,
+    const char *address,
+    zhash_t *headers,
+    zmsg_t *content)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_PUBLISH);
+    zccp_msg_set_address (self, address);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    zmsg_t *content_copy = zmsg_dup (content);
+    zccp_msg_set_content (self, &content_copy);
+    return zccp_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the DIRECT to the socket in one step
+
+int
+zccp_msg_send_direct (
+    void *output,
+    const char *address,
+    zhash_t *headers,
+    zmsg_t *content)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_DIRECT);
+    zccp_msg_set_address (self, address);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    zmsg_t *content_copy = zmsg_dup (content);
+    zccp_msg_set_content (self, &content_copy);
+    return zccp_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the DELIVER to the socket in one step
+
+int
+zccp_msg_send_deliver (
+    void *output,
+    const char *sender,
+    const char *address,
+    zhash_t *headers,
+    zmsg_t *content)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_DELIVER);
+    zccp_msg_set_sender (self, sender);
+    zccp_msg_set_address (self, address);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    zmsg_t *content_copy = zmsg_dup (content);
+    zccp_msg_set_content (self, &content_copy);
     return zccp_msg_send (&self, output);
 }
 
@@ -791,97 +1162,40 @@ zccp_msg_send_goodbye (
 
 
 //  --------------------------------------------------------------------------
-//  Send the READY to the socket in one step
+//  Send the GOODBYE_OK to the socket in one step
 
 int
-zccp_msg_send_ready (
+zccp_msg_send_goodbye_ok (
+    void *output,
+    zhash_t *headers)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_GOODBYE_OK);
+    zhash_t *headers_copy = zhash_dup (headers);
+    zccp_msg_set_headers (self, &headers_copy);
+    return zccp_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the PING to the socket in one step
+
+int
+zccp_msg_send_ping (
     void *output)
 {
-    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_READY);
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_PING);
     return zccp_msg_send (&self, output);
 }
 
 
 //  --------------------------------------------------------------------------
-//  Send the SUBSCRIBE to the socket in one step
+//  Send the PING_OK to the socket in one step
 
 int
-zccp_msg_send_subscribe (
-    void *output,
-    const char *expression)
+zccp_msg_send_ping_ok (
+    void *output)
 {
-    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_SUBSCRIBE);
-    zccp_msg_set_expression (self, expression);
-    return zccp_msg_send (&self, output);
-}
-
-
-//  --------------------------------------------------------------------------
-//  Send the PUBLISH to the socket in one step
-
-int
-zccp_msg_send_publish (
-    void *output,
-    const char *header,
-    zchunk_t *content)
-{
-    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_PUBLISH);
-    zccp_msg_set_header (self, header);
-    zchunk_t *content_copy = zchunk_dup (content);
-    zccp_msg_set_content (self, &content_copy);
-    return zccp_msg_send (&self, output);
-}
-
-
-//  --------------------------------------------------------------------------
-//  Send the DELIVER to the socket in one step
-
-int
-zccp_msg_send_deliver (
-    void *output,
-    const char *origin,
-    const char *header,
-    zchunk_t *content)
-{
-    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_DELIVER);
-    zccp_msg_set_origin (self, origin);
-    zccp_msg_set_header (self, header);
-    zchunk_t *content_copy = zchunk_dup (content);
-    zccp_msg_set_content (self, &content_copy);
-    return zccp_msg_send (&self, output);
-}
-
-
-//  --------------------------------------------------------------------------
-//  Send the REQUEST to the socket in one step
-
-int
-zccp_msg_send_request (
-    void *output,
-    const char *method,
-    zchunk_t *content)
-{
-    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_REQUEST);
-    zccp_msg_set_method (self, method);
-    zchunk_t *content_copy = zchunk_dup (content);
-    zccp_msg_set_content (self, &content_copy);
-    return zccp_msg_send (&self, output);
-}
-
-
-//  --------------------------------------------------------------------------
-//  Send the REPLY to the socket in one step
-
-int
-zccp_msg_send_reply (
-    void *output,
-    uint16_t status,
-    zchunk_t *content)
-{
-    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_REPLY);
-    zccp_msg_set_status (self, status);
-    zchunk_t *content_copy = zchunk_dup (content);
-    zccp_msg_set_content (self, &content_copy);
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_PING_OK);
     return zccp_msg_send (&self, output);
 }
 
@@ -913,37 +1227,48 @@ zccp_msg_dup (zccp_msg_t *self)
     switch (self->id) {
         case ZCCP_MSG_HELLO:
             copy->identifier = self->identifier? strdup (self->identifier): NULL;
+            copy->headers = self->headers? zhash_dup (self->headers): NULL;
+            break;
+
+        case ZCCP_MSG_HELLO_OK:
+            copy->headers = self->headers? zhash_dup (self->headers): NULL;
+            break;
+
+        case ZCCP_MSG_SUBSCRIBE:
+            copy->expression = self->expression? strdup (self->expression): NULL;
+            copy->headers = self->headers? zhash_dup (self->headers): NULL;
+            break;
+
+        case ZCCP_MSG_PUBLISH:
+            copy->address = self->address? strdup (self->address): NULL;
+            copy->headers = self->headers? zhash_dup (self->headers): NULL;
+            copy->content = self->content? zmsg_dup (self->content): NULL;
+            break;
+
+        case ZCCP_MSG_DIRECT:
+            copy->address = self->address? strdup (self->address): NULL;
+            copy->headers = self->headers? zhash_dup (self->headers): NULL;
+            copy->content = self->content? zmsg_dup (self->content): NULL;
+            break;
+
+        case ZCCP_MSG_DELIVER:
+            copy->sender = self->sender? strdup (self->sender): NULL;
+            copy->address = self->address? strdup (self->address): NULL;
+            copy->headers = self->headers? zhash_dup (self->headers): NULL;
+            copy->content = self->content? zmsg_dup (self->content): NULL;
             break;
 
         case ZCCP_MSG_GOODBYE:
             break;
 
-        case ZCCP_MSG_READY:
+        case ZCCP_MSG_GOODBYE_OK:
+            copy->headers = self->headers? zhash_dup (self->headers): NULL;
             break;
 
-        case ZCCP_MSG_SUBSCRIBE:
-            copy->expression = self->expression? strdup (self->expression): NULL;
+        case ZCCP_MSG_PING:
             break;
 
-        case ZCCP_MSG_PUBLISH:
-            copy->header = self->header? strdup (self->header): NULL;
-            copy->content = self->content? zchunk_dup (self->content): NULL;
-            break;
-
-        case ZCCP_MSG_DELIVER:
-            copy->origin = self->origin? strdup (self->origin): NULL;
-            copy->header = self->header? strdup (self->header): NULL;
-            copy->content = self->content? zchunk_dup (self->content): NULL;
-            break;
-
-        case ZCCP_MSG_REQUEST:
-            copy->method = self->method? strdup (self->method): NULL;
-            copy->content = self->content? zchunk_dup (self->content): NULL;
-            break;
-
-        case ZCCP_MSG_REPLY:
-            copy->status = self->status;
-            copy->content = self->content? zchunk_dup (self->content): NULL;
+        case ZCCP_MSG_PING_OK:
             break;
 
         case ZCCP_MSG_INVALID:
@@ -968,14 +1293,30 @@ zccp_msg_print (zccp_msg_t *self)
                 zsys_debug ("    identifier='%s'", self->identifier);
             else
                 zsys_debug ("    identifier=");
+            zsys_debug ("    headers=");
+            if (self->headers) {
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    zsys_debug ("        %s=%s", zhash_cursor (self->headers), item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            else
+                zsys_debug ("(NULL)");
             break;
             
-        case ZCCP_MSG_GOODBYE:
-            zsys_debug ("ZCCP_MSG_GOODBYE:");
-            break;
-            
-        case ZCCP_MSG_READY:
-            zsys_debug ("ZCCP_MSG_READY:");
+        case ZCCP_MSG_HELLO_OK:
+            zsys_debug ("ZCCP_MSG_HELLO_OK:");
+            zsys_debug ("    headers=");
+            if (self->headers) {
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    zsys_debug ("        %s=%s", zhash_cursor (self->headers), item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            else
+                zsys_debug ("(NULL)");
             break;
             
         case ZCCP_MSG_SUBSCRIBE:
@@ -984,43 +1325,115 @@ zccp_msg_print (zccp_msg_t *self)
                 zsys_debug ("    expression='%s'", self->expression);
             else
                 zsys_debug ("    expression=");
+            zsys_debug ("    headers=");
+            if (self->headers) {
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    zsys_debug ("        %s=%s", zhash_cursor (self->headers), item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            else
+                zsys_debug ("(NULL)");
             break;
             
         case ZCCP_MSG_PUBLISH:
             zsys_debug ("ZCCP_MSG_PUBLISH:");
-            if (self->header)
-                zsys_debug ("    header='%s'", self->header);
+            if (self->address)
+                zsys_debug ("    address='%s'", self->address);
             else
-                zsys_debug ("    header=");
-            zsys_debug ("    content=[ ... ]");
+                zsys_debug ("    address=");
+            zsys_debug ("    headers=");
+            if (self->headers) {
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    zsys_debug ("        %s=%s", zhash_cursor (self->headers), item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            else
+                zsys_debug ("(NULL)");
+            zsys_debug ("    content=");
+            if (self->content)
+                zmsg_print (self->content);
+            else
+                zsys_debug ("(NULL)");
+            break;
+            
+        case ZCCP_MSG_DIRECT:
+            zsys_debug ("ZCCP_MSG_DIRECT:");
+            if (self->address)
+                zsys_debug ("    address='%s'", self->address);
+            else
+                zsys_debug ("    address=");
+            zsys_debug ("    headers=");
+            if (self->headers) {
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    zsys_debug ("        %s=%s", zhash_cursor (self->headers), item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            else
+                zsys_debug ("(NULL)");
+            zsys_debug ("    content=");
+            if (self->content)
+                zmsg_print (self->content);
+            else
+                zsys_debug ("(NULL)");
             break;
             
         case ZCCP_MSG_DELIVER:
             zsys_debug ("ZCCP_MSG_DELIVER:");
-            if (self->origin)
-                zsys_debug ("    origin='%s'", self->origin);
+            if (self->sender)
+                zsys_debug ("    sender='%s'", self->sender);
             else
-                zsys_debug ("    origin=");
-            if (self->header)
-                zsys_debug ("    header='%s'", self->header);
+                zsys_debug ("    sender=");
+            if (self->address)
+                zsys_debug ("    address='%s'", self->address);
             else
-                zsys_debug ("    header=");
-            zsys_debug ("    content=[ ... ]");
+                zsys_debug ("    address=");
+            zsys_debug ("    headers=");
+            if (self->headers) {
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    zsys_debug ("        %s=%s", zhash_cursor (self->headers), item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            else
+                zsys_debug ("(NULL)");
+            zsys_debug ("    content=");
+            if (self->content)
+                zmsg_print (self->content);
+            else
+                zsys_debug ("(NULL)");
             break;
             
-        case ZCCP_MSG_REQUEST:
-            zsys_debug ("ZCCP_MSG_REQUEST:");
-            if (self->method)
-                zsys_debug ("    method='%s'", self->method);
-            else
-                zsys_debug ("    method=");
-            zsys_debug ("    content=[ ... ]");
+        case ZCCP_MSG_GOODBYE:
+            zsys_debug ("ZCCP_MSG_GOODBYE:");
             break;
             
-        case ZCCP_MSG_REPLY:
-            zsys_debug ("ZCCP_MSG_REPLY:");
-            zsys_debug ("    status=%ld", (long) self->status);
-            zsys_debug ("    content=[ ... ]");
+        case ZCCP_MSG_GOODBYE_OK:
+            zsys_debug ("ZCCP_MSG_GOODBYE_OK:");
+            zsys_debug ("    headers=");
+            if (self->headers) {
+                char *item = (char *) zhash_first (self->headers);
+                while (item) {
+                    zsys_debug ("        %s=%s", zhash_cursor (self->headers), item);
+                    item = (char *) zhash_next (self->headers);
+                }
+            }
+            else
+                zsys_debug ("(NULL)");
+            break;
+            
+        case ZCCP_MSG_PING:
+            zsys_debug ("ZCCP_MSG_PING:");
+            break;
+            
+        case ZCCP_MSG_PING_OK:
+            zsys_debug ("ZCCP_MSG_PING_OK:");
             break;
             
         case ZCCP_MSG_INVALID:
@@ -1077,11 +1490,8 @@ zccp_msg_command (zccp_msg_t *self)
         case ZCCP_MSG_HELLO:
             return ("HELLO");
             break;
-        case ZCCP_MSG_GOODBYE:
-            return ("GOODBYE");
-            break;
-        case ZCCP_MSG_READY:
-            return ("READY");
+        case ZCCP_MSG_HELLO_OK:
+            return ("HELLO_OK");
             break;
         case ZCCP_MSG_SUBSCRIBE:
             return ("SUBSCRIBE");
@@ -1089,14 +1499,23 @@ zccp_msg_command (zccp_msg_t *self)
         case ZCCP_MSG_PUBLISH:
             return ("PUBLISH");
             break;
+        case ZCCP_MSG_DIRECT:
+            return ("DIRECT");
+            break;
         case ZCCP_MSG_DELIVER:
             return ("DELIVER");
             break;
-        case ZCCP_MSG_REQUEST:
-            return ("REQUEST");
+        case ZCCP_MSG_GOODBYE:
+            return ("GOODBYE");
             break;
-        case ZCCP_MSG_REPLY:
-            return ("REPLY");
+        case ZCCP_MSG_GOODBYE_OK:
+            return ("GOODBYE_OK");
+            break;
+        case ZCCP_MSG_PING:
+            return ("PING");
+            break;
+        case ZCCP_MSG_PING_OK:
+            return ("PING_OK");
             break;
         case ZCCP_MSG_INVALID:
             return ("INVALID");
@@ -1129,6 +1548,94 @@ zccp_msg_set_identifier (zccp_msg_t *self, const char *format, ...)
 
 
 //  --------------------------------------------------------------------------
+//  Get the headers field without transferring ownership
+
+zhash_t *
+zccp_msg_headers (zccp_msg_t *self)
+{
+    assert (self);
+    return self->headers;
+}
+
+//  Get the headers field and transfer ownership to caller
+
+zhash_t *
+zccp_msg_get_headers (zccp_msg_t *self)
+{
+    zhash_t *headers = self->headers;
+    self->headers = NULL;
+    return headers;
+}
+
+//  Set the headers field, transferring ownership from caller
+
+void
+zccp_msg_set_headers (zccp_msg_t *self, zhash_t **headers_p)
+{
+    assert (self);
+    assert (headers_p);
+    zhash_destroy (&self->headers);
+    self->headers = *headers_p;
+    *headers_p = NULL;
+}
+
+//  --------------------------------------------------------------------------
+//  Get/set a value in the headers dictionary
+
+const char *
+zccp_msg_headers_string (zccp_msg_t *self, const char *key, const char *default_value)
+{
+    assert (self);
+    const char *value = NULL;
+    if (self->headers)
+        value = (const char *) (zhash_lookup (self->headers, key));
+    if (!value)
+        value = default_value;
+
+    return value;
+}
+
+uint64_t
+zccp_msg_headers_number (zccp_msg_t *self, const char *key, uint64_t default_value)
+{
+    assert (self);
+    uint64_t value = default_value;
+    char *string = NULL;
+    if (self->headers)
+        string = (char *) (zhash_lookup (self->headers, key));
+    if (string)
+        value = atol (string);
+
+    return value;
+}
+
+void
+zccp_msg_headers_insert (zccp_msg_t *self, const char *key, const char *format, ...)
+{
+    //  Format into newly allocated string
+    assert (self);
+    va_list argptr;
+    va_start (argptr, format);
+    char *string = zsys_vprintf (format, argptr);
+    va_end (argptr);
+
+    //  Store string in hash table
+    if (!self->headers) {
+        self->headers = zhash_new ();
+        zhash_autofree (self->headers);
+    }
+    zhash_update (self->headers, key, string);
+    free (string);
+}
+
+size_t
+zccp_msg_headers_size (zccp_msg_t *self)
+{
+    return zhash_size (self->headers);
+}
+
+
+//  --------------------------------------------------------------------------
 //  Get/set the expression field
 
 const char *
@@ -1152,24 +1659,24 @@ zccp_msg_set_expression (zccp_msg_t *self, const char *format, ...)
 
 
 //  --------------------------------------------------------------------------
-//  Get/set the header field
+//  Get/set the address field
 
 const char *
-zccp_msg_header (zccp_msg_t *self)
+zccp_msg_address (zccp_msg_t *self)
 {
     assert (self);
-    return self->header;
+    return self->address;
 }
 
 void
-zccp_msg_set_header (zccp_msg_t *self, const char *format, ...)
+zccp_msg_set_address (zccp_msg_t *self, const char *format, ...)
 {
-    //  Format header from provided arguments
+    //  Format address from provided arguments
     assert (self);
     va_list argptr;
     va_start (argptr, format);
-    free (self->header);
-    self->header = zsys_vprintf (format, argptr);
+    free (self->address);
+    self->address = zsys_vprintf (format, argptr);
     va_end (argptr);
 }
 
@@ -1177,7 +1684,7 @@ zccp_msg_set_header (zccp_msg_t *self, const char *format, ...)
 //  --------------------------------------------------------------------------
 //  Get the content field without transferring ownership
 
-zchunk_t *
+zmsg_t *
 zccp_msg_content (zccp_msg_t *self)
 {
     assert (self);
@@ -1186,10 +1693,10 @@ zccp_msg_content (zccp_msg_t *self)
 
 //  Get the content field and transfer ownership to caller
 
-zchunk_t *
+zmsg_t *
 zccp_msg_get_content (zccp_msg_t *self)
 {
-    zchunk_t *content = self->content;
+    zmsg_t *content = self->content;
     self->content = NULL;
     return content;
 }
@@ -1197,77 +1704,36 @@ zccp_msg_get_content (zccp_msg_t *self)
 //  Set the content field, transferring ownership from caller
 
 void
-zccp_msg_set_content (zccp_msg_t *self, zchunk_t **chunk_p)
+zccp_msg_set_content (zccp_msg_t *self, zmsg_t **msg_p)
 {
     assert (self);
-    assert (chunk_p);
-    zchunk_destroy (&self->content);
-    self->content = *chunk_p;
-    *chunk_p = NULL;
+    assert (msg_p);
+    zmsg_destroy (&self->content);
+    self->content = *msg_p;
+    *msg_p = NULL;
 }
 
 
 //  --------------------------------------------------------------------------
-//  Get/set the origin field
+//  Get/set the sender field
 
 const char *
-zccp_msg_origin (zccp_msg_t *self)
+zccp_msg_sender (zccp_msg_t *self)
 {
     assert (self);
-    return self->origin;
+    return self->sender;
 }
 
 void
-zccp_msg_set_origin (zccp_msg_t *self, const char *format, ...)
+zccp_msg_set_sender (zccp_msg_t *self, const char *format, ...)
 {
-    //  Format origin from provided arguments
+    //  Format sender from provided arguments
     assert (self);
     va_list argptr;
     va_start (argptr, format);
-    free (self->origin);
-    self->origin = zsys_vprintf (format, argptr);
+    free (self->sender);
+    self->sender = zsys_vprintf (format, argptr);
     va_end (argptr);
-}
-
-
-//  --------------------------------------------------------------------------
-//  Get/set the method field
-
-const char *
-zccp_msg_method (zccp_msg_t *self)
-{
-    assert (self);
-    return self->method;
-}
-
-void
-zccp_msg_set_method (zccp_msg_t *self, const char *format, ...)
-{
-    //  Format method from provided arguments
-    assert (self);
-    va_list argptr;
-    va_start (argptr, format);
-    free (self->method);
-    self->method = zsys_vprintf (format, argptr);
-    va_end (argptr);
-}
-
-
-//  --------------------------------------------------------------------------
-//  Get/set the status field
-
-uint16_t
-zccp_msg_status (zccp_msg_t *self)
-{
-    assert (self);
-    return self->status;
-}
-
-void
-zccp_msg_set_status (zccp_msg_t *self, uint16_t status)
-{
-    assert (self);
-    self->status = status;
 }
 
 
@@ -1306,6 +1772,8 @@ zccp_msg_test (bool verbose)
     zccp_msg_destroy (&copy);
 
     zccp_msg_set_identifier (self, "Life is short but Now lasts for ever");
+    zccp_msg_headers_insert (self, "Name", "Brutus");
+    zccp_msg_headers_insert (self, "Age", "%d", 43);
     //  Send twice from same object
     zccp_msg_send_again (self, output);
     zccp_msg_send (&self, output);
@@ -1316,6 +1784,146 @@ zccp_msg_test (bool verbose)
         assert (zccp_msg_routing_id (self));
         
         assert (streq (zccp_msg_identifier (self), "Life is short but Now lasts for ever"));
+        assert (zccp_msg_headers_size (self) == 2);
+        assert (streq (zccp_msg_headers_string (self, "Name", "?"), "Brutus"));
+        assert (zccp_msg_headers_number (self, "Age", 0) == 43);
+        zccp_msg_destroy (&self);
+    }
+    self = zccp_msg_new (ZCCP_MSG_HELLO_OK);
+    
+    //  Check that _dup works on empty message
+    copy = zccp_msg_dup (self);
+    assert (copy);
+    zccp_msg_destroy (&copy);
+
+    zccp_msg_headers_insert (self, "Name", "Brutus");
+    zccp_msg_headers_insert (self, "Age", "%d", 43);
+    //  Send twice from same object
+    zccp_msg_send_again (self, output);
+    zccp_msg_send (&self, output);
+
+    for (instance = 0; instance < 2; instance++) {
+        self = zccp_msg_recv (input);
+        assert (self);
+        assert (zccp_msg_routing_id (self));
+        
+        assert (zccp_msg_headers_size (self) == 2);
+        assert (streq (zccp_msg_headers_string (self, "Name", "?"), "Brutus"));
+        assert (zccp_msg_headers_number (self, "Age", 0) == 43);
+        zccp_msg_destroy (&self);
+    }
+    self = zccp_msg_new (ZCCP_MSG_SUBSCRIBE);
+    
+    //  Check that _dup works on empty message
+    copy = zccp_msg_dup (self);
+    assert (copy);
+    zccp_msg_destroy (&copy);
+
+    zccp_msg_set_expression (self, "Life is short but Now lasts for ever");
+    zccp_msg_headers_insert (self, "Name", "Brutus");
+    zccp_msg_headers_insert (self, "Age", "%d", 43);
+    //  Send twice from same object
+    zccp_msg_send_again (self, output);
+    zccp_msg_send (&self, output);
+
+    for (instance = 0; instance < 2; instance++) {
+        self = zccp_msg_recv (input);
+        assert (self);
+        assert (zccp_msg_routing_id (self));
+        
+        assert (streq (zccp_msg_expression (self), "Life is short but Now lasts for ever"));
+        assert (zccp_msg_headers_size (self) == 2);
+        assert (streq (zccp_msg_headers_string (self, "Name", "?"), "Brutus"));
+        assert (zccp_msg_headers_number (self, "Age", 0) == 43);
+        zccp_msg_destroy (&self);
+    }
+    self = zccp_msg_new (ZCCP_MSG_PUBLISH);
+    
+    //  Check that _dup works on empty message
+    copy = zccp_msg_dup (self);
+    assert (copy);
+    zccp_msg_destroy (&copy);
+
+    zccp_msg_set_address (self, "Life is short but Now lasts for ever");
+    zccp_msg_headers_insert (self, "Name", "Brutus");
+    zccp_msg_headers_insert (self, "Age", "%d", 43);
+    zmsg_t *publish_content = zmsg_new ();
+    zccp_msg_set_content (self, &publish_content);
+    zmsg_addstr (zccp_msg_content (self), "Hello, World");
+    //  Send twice from same object
+    zccp_msg_send_again (self, output);
+    zccp_msg_send (&self, output);
+
+    for (instance = 0; instance < 2; instance++) {
+        self = zccp_msg_recv (input);
+        assert (self);
+        assert (zccp_msg_routing_id (self));
+        
+        assert (streq (zccp_msg_address (self), "Life is short but Now lasts for ever"));
+        assert (zccp_msg_headers_size (self) == 2);
+        assert (streq (zccp_msg_headers_string (self, "Name", "?"), "Brutus"));
+        assert (zccp_msg_headers_number (self, "Age", 0) == 43);
+        assert (zmsg_size (zccp_msg_content (self)) == 1);
+        zccp_msg_destroy (&self);
+    }
+    self = zccp_msg_new (ZCCP_MSG_DIRECT);
+    
+    //  Check that _dup works on empty message
+    copy = zccp_msg_dup (self);
+    assert (copy);
+    zccp_msg_destroy (&copy);
+
+    zccp_msg_set_address (self, "Life is short but Now lasts for ever");
+    zccp_msg_headers_insert (self, "Name", "Brutus");
+    zccp_msg_headers_insert (self, "Age", "%d", 43);
+    zmsg_t *direct_content = zmsg_new ();
+    zccp_msg_set_content (self, &direct_content);
+    zmsg_addstr (zccp_msg_content (self), "Hello, World");
+    //  Send twice from same object
+    zccp_msg_send_again (self, output);
+    zccp_msg_send (&self, output);
+
+    for (instance = 0; instance < 2; instance++) {
+        self = zccp_msg_recv (input);
+        assert (self);
+        assert (zccp_msg_routing_id (self));
+        
+        assert (streq (zccp_msg_address (self), "Life is short but Now lasts for ever"));
+        assert (zccp_msg_headers_size (self) == 2);
+        assert (streq (zccp_msg_headers_string (self, "Name", "?"), "Brutus"));
+        assert (zccp_msg_headers_number (self, "Age", 0) == 43);
+        assert (zmsg_size (zccp_msg_content (self)) == 1);
+        zccp_msg_destroy (&self);
+    }
+    self = zccp_msg_new (ZCCP_MSG_DELIVER);
+    
+    //  Check that _dup works on empty message
+    copy = zccp_msg_dup (self);
+    assert (copy);
+    zccp_msg_destroy (&copy);
+
+    zccp_msg_set_sender (self, "Life is short but Now lasts for ever");
+    zccp_msg_set_address (self, "Life is short but Now lasts for ever");
+    zccp_msg_headers_insert (self, "Name", "Brutus");
+    zccp_msg_headers_insert (self, "Age", "%d", 43);
+    zmsg_t *deliver_content = zmsg_new ();
+    zccp_msg_set_content (self, &deliver_content);
+    zmsg_addstr (zccp_msg_content (self), "Hello, World");
+    //  Send twice from same object
+    zccp_msg_send_again (self, output);
+    zccp_msg_send (&self, output);
+
+    for (instance = 0; instance < 2; instance++) {
+        self = zccp_msg_recv (input);
+        assert (self);
+        assert (zccp_msg_routing_id (self));
+        
+        assert (streq (zccp_msg_sender (self), "Life is short but Now lasts for ever"));
+        assert (streq (zccp_msg_address (self), "Life is short but Now lasts for ever"));
+        assert (zccp_msg_headers_size (self) == 2);
+        assert (streq (zccp_msg_headers_string (self, "Name", "?"), "Brutus"));
+        assert (zccp_msg_headers_number (self, "Age", 0) == 43);
+        assert (zmsg_size (zccp_msg_content (self)) == 1);
         zccp_msg_destroy (&self);
     }
     self = zccp_msg_new (ZCCP_MSG_GOODBYE);
@@ -1336,7 +1944,30 @@ zccp_msg_test (bool verbose)
         
         zccp_msg_destroy (&self);
     }
-    self = zccp_msg_new (ZCCP_MSG_READY);
+    self = zccp_msg_new (ZCCP_MSG_GOODBYE_OK);
+    
+    //  Check that _dup works on empty message
+    copy = zccp_msg_dup (self);
+    assert (copy);
+    zccp_msg_destroy (&copy);
+
+    zccp_msg_headers_insert (self, "Name", "Brutus");
+    zccp_msg_headers_insert (self, "Age", "%d", 43);
+    //  Send twice from same object
+    zccp_msg_send_again (self, output);
+    zccp_msg_send (&self, output);
+
+    for (instance = 0; instance < 2; instance++) {
+        self = zccp_msg_recv (input);
+        assert (self);
+        assert (zccp_msg_routing_id (self));
+        
+        assert (zccp_msg_headers_size (self) == 2);
+        assert (streq (zccp_msg_headers_string (self, "Name", "?"), "Brutus"));
+        assert (zccp_msg_headers_number (self, "Age", 0) == 43);
+        zccp_msg_destroy (&self);
+    }
+    self = zccp_msg_new (ZCCP_MSG_PING);
     
     //  Check that _dup works on empty message
     copy = zccp_msg_dup (self);
@@ -1354,14 +1985,13 @@ zccp_msg_test (bool verbose)
         
         zccp_msg_destroy (&self);
     }
-    self = zccp_msg_new (ZCCP_MSG_SUBSCRIBE);
+    self = zccp_msg_new (ZCCP_MSG_PING_OK);
     
     //  Check that _dup works on empty message
     copy = zccp_msg_dup (self);
     assert (copy);
     zccp_msg_destroy (&copy);
 
-    zccp_msg_set_expression (self, "Life is short but Now lasts for ever");
     //  Send twice from same object
     zccp_msg_send_again (self, output);
     zccp_msg_send (&self, output);
@@ -1371,101 +2001,6 @@ zccp_msg_test (bool verbose)
         assert (self);
         assert (zccp_msg_routing_id (self));
         
-        assert (streq (zccp_msg_expression (self), "Life is short but Now lasts for ever"));
-        zccp_msg_destroy (&self);
-    }
-    self = zccp_msg_new (ZCCP_MSG_PUBLISH);
-    
-    //  Check that _dup works on empty message
-    copy = zccp_msg_dup (self);
-    assert (copy);
-    zccp_msg_destroy (&copy);
-
-    zccp_msg_set_header (self, "Life is short but Now lasts for ever");
-    zchunk_t *publish_content = zchunk_new ("Captcha Diem", 12);
-    zccp_msg_set_content (self, &publish_content);
-    //  Send twice from same object
-    zccp_msg_send_again (self, output);
-    zccp_msg_send (&self, output);
-
-    for (instance = 0; instance < 2; instance++) {
-        self = zccp_msg_recv (input);
-        assert (self);
-        assert (zccp_msg_routing_id (self));
-        
-        assert (streq (zccp_msg_header (self), "Life is short but Now lasts for ever"));
-        assert (memcmp (zchunk_data (zccp_msg_content (self)), "Captcha Diem", 12) == 0);
-        zccp_msg_destroy (&self);
-    }
-    self = zccp_msg_new (ZCCP_MSG_DELIVER);
-    
-    //  Check that _dup works on empty message
-    copy = zccp_msg_dup (self);
-    assert (copy);
-    zccp_msg_destroy (&copy);
-
-    zccp_msg_set_origin (self, "Life is short but Now lasts for ever");
-    zccp_msg_set_header (self, "Life is short but Now lasts for ever");
-    zchunk_t *deliver_content = zchunk_new ("Captcha Diem", 12);
-    zccp_msg_set_content (self, &deliver_content);
-    //  Send twice from same object
-    zccp_msg_send_again (self, output);
-    zccp_msg_send (&self, output);
-
-    for (instance = 0; instance < 2; instance++) {
-        self = zccp_msg_recv (input);
-        assert (self);
-        assert (zccp_msg_routing_id (self));
-        
-        assert (streq (zccp_msg_origin (self), "Life is short but Now lasts for ever"));
-        assert (streq (zccp_msg_header (self), "Life is short but Now lasts for ever"));
-        assert (memcmp (zchunk_data (zccp_msg_content (self)), "Captcha Diem", 12) == 0);
-        zccp_msg_destroy (&self);
-    }
-    self = zccp_msg_new (ZCCP_MSG_REQUEST);
-    
-    //  Check that _dup works on empty message
-    copy = zccp_msg_dup (self);
-    assert (copy);
-    zccp_msg_destroy (&copy);
-
-    zccp_msg_set_method (self, "Life is short but Now lasts for ever");
-    zchunk_t *request_content = zchunk_new ("Captcha Diem", 12);
-    zccp_msg_set_content (self, &request_content);
-    //  Send twice from same object
-    zccp_msg_send_again (self, output);
-    zccp_msg_send (&self, output);
-
-    for (instance = 0; instance < 2; instance++) {
-        self = zccp_msg_recv (input);
-        assert (self);
-        assert (zccp_msg_routing_id (self));
-        
-        assert (streq (zccp_msg_method (self), "Life is short but Now lasts for ever"));
-        assert (memcmp (zchunk_data (zccp_msg_content (self)), "Captcha Diem", 12) == 0);
-        zccp_msg_destroy (&self);
-    }
-    self = zccp_msg_new (ZCCP_MSG_REPLY);
-    
-    //  Check that _dup works on empty message
-    copy = zccp_msg_dup (self);
-    assert (copy);
-    zccp_msg_destroy (&copy);
-
-    zccp_msg_set_status (self, 123);
-    zchunk_t *reply_content = zchunk_new ("Captcha Diem", 12);
-    zccp_msg_set_content (self, &reply_content);
-    //  Send twice from same object
-    zccp_msg_send_again (self, output);
-    zccp_msg_send (&self, output);
-
-    for (instance = 0; instance < 2; instance++) {
-        self = zccp_msg_recv (input);
-        assert (self);
-        assert (zccp_msg_routing_id (self));
-        
-        assert (zccp_msg_status (self) == 123);
-        assert (memcmp (zchunk_data (zccp_msg_content (self)), "Captcha Diem", 12) == 0);
         zccp_msg_destroy (&self);
     }
     self = zccp_msg_new (ZCCP_MSG_INVALID);
