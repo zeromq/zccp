@@ -7,58 +7,73 @@
     signature = "10"
     >
     <grammar>
-    ZCCP = greeting traffic
+    ZCCP = greeting traffic signoff
     
-    greeting = C:hello S:ready
-    traffic = C:subscribe / C:publish / S:deliver
-            / request / reply
-            / C:goodbye S:ready
+    greeting = C:HELLO S:HELLO-OK
+    
+    traffic = C:SUBSCRIBE / C:PUBLISH / C:DIRECT /
+              S:DELIVER
+              
+    signoff = C:GOODBYE S:GOODBYE-OK
     </grammar>
     
-    <message name = "hello">
-        Client says hello to server and provides its identifier.
+    <message name = "HELLO">
+        Client greets the server and provides its identifier.
         <field name = "identifier" type = "string">Client identifier</field>
+        <field name = "headers" type = "dictionary">Client properties</field>
     </message>
 
-    <message name = "goodbye">
-        Client says goodbye to server.
+    <message name = "HELLO-OK">
+        Server confirms client 
+        <field name = "headers" type = "dictionary">Server properties</field>
     </message>
 
-    <message name = "ready">
-        Server confirms client HELLO or GOODBYE
-    </message>
-
-    <message name = "subscribe">
-        Client subscribes to some set of notifications
+    <message name = "SUBSCRIBE">
+        Client subscribes to some set of messages
         <field name = "expression" type = "string">Regular expression</field>
+        <field name = "headers" type = "dictionary">Subscription options</field>
     </message>
 
-    <message name = "publish">
-        Client publishes a notification 
-        <field name = "header" type = "string">Header, for matching</field>
-        <field name = "content" type = "chunk">Content</field>
+    <message name = "PUBLISH">
+        Client publishes a message to the server
+        <field name = "address" type = "string">Destination routing key</field>
+        <field name = "headers" type = "dictionary">Content header fields</field>
+        <field name = "content" type = "msg">Content, as multipart message</field>
     </message>
 
-    <message name = "deliver">
-        Server delivers notification to client
-        <field name = "origin" type = "string">A client identifier</field>
-        <field name = "header" type = "string">Header</field>
-        <field name = "content" type = "chunk">Content</field>
+    <message name = "DIRECT">
+        Client sends a message to a specific client
+        <field name = "address" type = "string">Destination client identifier</field>
+        <field name = "headers" type = "dictionary">Content header fields</field>
+        <field name = "content" type = "msg">Content, as multipart message</field>
     </message>
 
-    <message name = "request">
-        Request some action
-        <field name = "method" type = "string">Requested method</field>
-        <field name = "content" type = "chunk">Content</field>
+    <message name = "DELIVER">
+        Server delivers a message to client
+        <field name = "sender" type = "string">Originating client</field>
+        <field name = "address" type = "string">Destination address</field>
+        <field name = "headers" type = "dictionary">Content header fields</field>
+        <field name = "content" type = "msg">Content, as multipart message</field>
     </message>
 
-    <message name = "reply">
-        Reply to a command request
-        <field name = "status" type = "number" size = "2">Success/failure status</field>
-        <field name = "content" type = "chunk">Content</field>
+    <message name = "GOODBYE">
+        Client says goodbye to server
     </message>
-    
-    <message name = "invalid">
+
+    <message name = "GOODBYE-OK">
+        Server confirms client signoff
+        <field name = "headers" type = "dictionary">Session statistics</field>
+    </message>
+
+    <message name = "PING">
+        Client or server pings the other party
+    </message>
+
+    <message name = "PING-OK">
+        Reply to a PING
+    </message>
+
+    <message name = "INVALID">
         Client sent a message that was not valid at this time
     </message>
 </class>

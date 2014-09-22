@@ -11,7 +11,11 @@
     <state name = "start" inherit = "external">
         <event name = "HELLO" next = "connected">
             <action name = "register new client" />
-            <action name = "send" message = "READY" />
+            <action name = "send" message = "HELLO OK" />
+        </event>
+        <event name = "*">
+            <action name = "send" message = "INVALID" />
+            <action name = "terminate" />
         </event>
     </state>
 
@@ -22,8 +26,7 @@
         <event name = "PUBLISH">
             <action name = "forward to subscribers" />
         </event>
-        <event name = "REQUEST">
-            <action name = "send" message = "REPLY" />
+        <event name = "DIRECT">
         </event>
         <event name = "forward">
             <action name = "get content to publish" />
@@ -33,7 +36,7 @@
 
     <state name = "external">
         <event name = "GOODBYE">
-            <action name = "send" message = "READY" />
+            <action name = "send" message = "GOODBYE OK" />
             <action name = "terminate" />
         </event>
         <!-- All other protocol messages are invalid -->

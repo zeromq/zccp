@@ -33,10 +33,11 @@ struct _server_t {
     
     zlist_t *patterns;          //  List of patterns subscribed to
 
-    //  When we're forwarding a notification, we need these
-    const char *origin;         //  Identifier of client sender
-    const char *header;         //  Message header
-    zchunk_t *content;          //  Message content
+    //  When we're forwarding a message, we need these
+    const char *sender;         //  Identifier of client sender
+    const char *address;        //  Message address
+    zhash_t *headers;           //  Message headers
+    zmsg_t *content;            //  Message content
 };
 
 //  ---------------------------------------------------------------------------
@@ -200,14 +201,14 @@ static void
 forward_to_subscribers (client_t *self)
 {
     //  Keep track of the message we're sending out to subscribers
-    self->server->origin = self->identifier;
-    self->server->header = zccp_msg_header (self->request);
+    self->server->sender = self->identifier;
+    self->server->address = zccp_msg_address (self->request);
     self->server->content = zccp_msg_content (self->request);
     
     //  Now find all matching subscribers
     pattern_t *pattern = (pattern_t *) zlist_first (self->server->patterns);
     while (pattern) {
-        if (zrex_matches (pattern->rex, zccp_msg_header (self->request))) {
+        if (zrex_matches (pattern->rex, zccp_msg_address (self->request))) {
             client_t *client = (client_t *) zlist_first (pattern->clients);
             while (client) {
                 if (client != self)
@@ -228,9 +229,12 @@ forward_to_subscribers (client_t *self)
 static void
 get_content_to_publish (client_t *self)
 {
-    zchunk_t *content = zchunk_dup (self->server->content);
-    zccp_msg_set_origin (self->reply, self->server->origin);
-    zccp_msg_set_header (self->reply, self->server->header);
+    zhash_t *headers = zhash_dup (self->server->headers);
+    zmsg_t *content = zmsg_dup (self->server->content);
+    
+    zccp_msg_set_sender  (self->reply, self->server->sender);
+    zccp_msg_set_address (self->reply, self->server->address);
+    zccp_msg_set_headers (self->reply, &headers);
     zccp_msg_set_content (self->reply, &content);
 }
 
@@ -258,71 +262,70 @@ zccp_server_test (bool verbose)
 
     zccp_msg_t *message;
     
-    //  Check HELLO/READY and INVALID
+    //  Check HELLO/HELLO-OK and INVALID
     
-    zccp_msg_send_request (client, "START", NULL);
+    zccp_msg_send_publish (client, "(HELLO, WORLD)", NULL, NULL);
     message = zccp_msg_recv (client);
     assert (message);
     assert (zccp_msg_id (message) == ZCCP_MSG_INVALID);
     zccp_msg_destroy (&message);
     
-    zccp_msg_send_hello (client, "step 1");
+    zccp_msg_send_hello (client, "step 1", NULL);
     message = zccp_msg_recv (client);
     assert (message);
-    assert (zccp_msg_id (message) == ZCCP_MSG_READY);
+    assert (zccp_msg_id (message) == ZCCP_MSG_HELLO_OK);
     zccp_msg_destroy (&message);
     
-    zccp_msg_send_request (client, "START", NULL);
-    message = zccp_msg_recv (client);
-    assert (message);
-    assert (zccp_msg_id (message) == ZCCP_MSG_REPLY);
-    zccp_msg_destroy (&message);
-
-    zccp_msg_send_hello (client, "step 2");
+    zccp_msg_send_hello (client, "step 2", NULL);
     message = zccp_msg_recv (client);
     assert (message);
     assert (zccp_msg_id (message) == ZCCP_MSG_INVALID);
     zccp_msg_destroy (&message);
 
     //  Let's try some SUBSCRIBE and PUBLISH commands
-    zccp_msg_send_hello (client, "step 3 - client");
+    zccp_msg_send_hello (client, "step 3 - client", NULL);
     message = zccp_msg_recv (client);
     assert (message);
-    assert (zccp_msg_id (message) == ZCCP_MSG_READY);
+    assert (zccp_msg_id (message) == ZCCP_MSG_HELLO_OK);
     zccp_msg_destroy (&message);
     
     zsock_t *device = zsock_new (ZMQ_DEALER);
     assert (device);
     zsock_connect (device, "ipc://@/zccp_server");
     
-    zccp_msg_send_hello (device, "step 3 - device");
+    zccp_msg_send_hello (device, "step 3 - device", NULL);
     message = zccp_msg_recv (device);
     assert (message);
-    assert (zccp_msg_id (message) == ZCCP_MSG_READY);
+    assert (zccp_msg_id (message) == ZCCP_MSG_HELLO_OK);
     zccp_msg_destroy (&message);
 
     //  Check our subscription engine; this should deliver us 2 messages
-    zccp_msg_send_subscribe (client, "H.*O");
-    zccp_msg_send_subscribe (client, "H.*O");
-    zccp_msg_send_subscribe (client, "HELLO");
+    zccp_msg_send_subscribe (client, "H.*O", NULL);
+    zccp_msg_send_subscribe (client, "H.*O", NULL);
+    zccp_msg_send_subscribe (client, "HELLO", NULL);
     //  Artificial delay to ensure subscriptions all arrive before we continue
     zclock_sleep (100);
-    zchunk_t *content = zchunk_new ("TEST", 4);
-    zccp_msg_send_publish (device, "(HELLO, WORLD)", content);
-    zchunk_destroy (&content);
+    zmsg_t *content = zmsg_new ();
+    zmsg_pushstr (content, "TEST");
+    zccp_msg_send_publish (device, "(HELLO, WORLD)", NULL, content);
+    zmsg_destroy (&content);
     
     message = zccp_msg_recv (client);
     assert (message);
     assert (zccp_msg_id (message) == ZCCP_MSG_DELIVER);
-    assert (streq (zccp_msg_header (message), "(HELLO, WORLD)"));
-    assert (zchunk_streq (zccp_msg_content (message), "TEST"));
+    assert (streq (zccp_msg_address (message), "(HELLO, WORLD)"));
+    char *string = zmsg_popstr (zccp_msg_content (message));
+    assert (streq (string, "TEST"));
+    free (string);
     zccp_msg_destroy (&message);
 
     message = zccp_msg_recv (client);
     assert (message);
     assert (zccp_msg_id (message) == ZCCP_MSG_DELIVER);
-    assert (streq (zccp_msg_header (message), "(HELLO, WORLD)"));
-    assert (zchunk_streq (zccp_msg_content (message), "TEST"));
+    assert (streq (zccp_msg_address (message), "(HELLO, WORLD)"));
+    string = zmsg_popstr (zccp_msg_content (message));
+    assert (streq (string, "TEST"));
+    free (string);
     zccp_msg_destroy (&message);
 
     message = zccp_msg_recv (client);

@@ -18,8 +18,10 @@
 
 struct _zccp_client_t {
     zsock_t *dealer;            //  Dealer socket to zccp server
-    char *type;                 //  Last received message type
-    char *body;                 //  Last received message body
+    char *sender;               //  Last delivered sender name
+    char *address;              //  Last delivered destination address
+    zhash_t *headers;           //  Last delivered message headers
+    zmsg_t *content;            //  Last delivered message content
 };
 
 
@@ -29,7 +31,7 @@ struct _zccp_client_t {
 //  REQUEST/REPLY exchanges.
 
 zccp_client_t *
-zccp_client_new (const char *identifier, const char *server)
+zccp_client_new (const char *identifier, const char *server, zhash_t *headers)
 {
     zccp_client_t *self = (zccp_client_t *) zmalloc (sizeof (zccp_client_t));
     assert (self);
@@ -38,9 +40,9 @@ zccp_client_new (const char *identifier, const char *server)
     assert (self->dealer);
     if (zsock_connect (self->dealer, "%s", server) == 0) {
         zsock_set_rcvtimeo (self->dealer, 2000);
-        zccp_msg_send_hello (self->dealer, identifier);
+        zccp_msg_send_hello (self->dealer, identifier, headers);
         zccp_msg_t *msg = zccp_msg_recv (self->dealer);
-        if (!msg || zccp_msg_id (msg) != ZCCP_MSG_READY)
+        if (!msg || zccp_msg_id (msg) != ZCCP_MSG_HELLO_OK)
             zccp_client_destroy (&self);
             
         zccp_msg_destroy (&msg);
@@ -70,8 +72,10 @@ zccp_client_destroy (zccp_client_t **self_p)
         zccp_msg_destroy (&msg);
         
         zsock_destroy (&self->dealer);
-        free (self->type);
-        free (self->body);
+        free (self->sender);
+        free (self->address);
+        zhash_destroy(&self->headers);
+        zmsg_destroy(&self->content);
         free (self);
         *self_p = NULL;
     }
@@ -82,9 +86,9 @@ zccp_client_destroy (zccp_client_t **self_p)
 //  Subscribe to some set of notifications
 
 void
-zccp_client_subscribe (zccp_client_t *self, const char *subscription)
+zccp_client_subscribe (zccp_client_t *self, const char *subscription, zhash_t *headers)
 {
-    zccp_msg_send_subscribe (self->dealer, subscription);
+    zccp_msg_send_subscribe (self->dealer, subscription, headers);
 }
 
 
@@ -92,11 +96,12 @@ zccp_client_subscribe (zccp_client_t *self, const char *subscription)
 //  Send a notification message of some type
 
 void
-zccp_client_send (zccp_client_t *self, const char *type, const char *message)
+zccp_client_send (zccp_client_t *self, const char *type, zhash_t *headers, const char *message)
 {
-    zchunk_t *content = zchunk_new (message, strlen (message));
-    zccp_msg_send_publish (self->dealer, type, content);
-    zchunk_destroy (&content);
+    zmsg_t *content = zmsg_new();
+    zmsg_pushstr(content, message);
+    zccp_msg_send_publish (self->dealer, type, headers, content);
+    zmsg_destroy (&content);
 }
 
 
@@ -105,21 +110,28 @@ zccp_client_send (zccp_client_t *self, const char *type, const char *message)
 //  else returns -1.
 
 int
-zccp_client_recv (zccp_client_t *self, char **type, char **body)
+zccp_client_recv (zccp_client_t *self, char **sender, char **address, zhash_t **headers, zmsg_t **content)
 {
+    zsock_set_rcvtimeo (self->dealer, -1);
     zccp_msg_t *msg = zccp_msg_recv (self->dealer);
     if (!msg)
         return -1;              //  Interrupted
         
     assert (zccp_msg_id (msg) == ZCCP_MSG_DELIVER);
-    free (self->type);
-    self->type = strdup (zccp_msg_header (msg));
-    free (self->body);
-    self->body = zchunk_strdup (zccp_msg_content (msg));
+    free (self->sender);
+    self->sender = strdup(zccp_msg_sender (msg));
+    free (self->address);
+    self->address = strdup(zccp_msg_sender (msg));
+    free (self->headers);
+    self->headers = zhash_dup (zccp_msg_headers (msg));
+    free (self->content);
+    self->content = zmsg_dup (zccp_msg_content (msg));
     zccp_msg_destroy (&msg);
     
-    *type = self->type;
-    *body = self->body;
+    *sender = self->sender;
+    *address = self->address;
+    *headers = self->headers;
+    *content = self->content;
     return 0;
 }
 
@@ -144,32 +156,34 @@ zccp_client_test (bool verbose)
     ///
 
     //  We'll simulate a network with a sensor device and a logger app
-    zccp_client_t *logger = zccp_client_new ("logger", server_endpoint);
+    zccp_client_t *logger = zccp_client_new ("logger", server_endpoint, NULL);
     assert (logger);
-    zccp_client_subscribe (logger, "^temp\\.");
-    zccp_client_subscribe (logger, "^fan\\.speed$");
-    zccp_client_subscribe (logger, "^special");
+    zccp_client_subscribe (logger, "^temp\\.", NULL);
+    zccp_client_subscribe (logger, "^fan\\.speed$", NULL);
+    zccp_client_subscribe (logger, "^special", NULL);
     //  Artificial delay to ensure subscriptions arrive before we continue
     zclock_sleep (100);
 
-    zccp_client_t *sensor = zccp_client_new ("sensor", server_endpoint);
+    zccp_client_t *sensor = zccp_client_new ("sensor", server_endpoint, NULL);
     assert (sensor);
-    zccp_client_send (sensor, "temp.cpu.1", "33");
-    zccp_client_send (sensor, "temp.cpu.2", "200");
-    zccp_client_send (sensor, "temp.cpu.3", "40");
-    zccp_client_send (sensor, "temp.cpu.4", "56");
-    zccp_client_send (sensor, "fan.speed", "1200");
-    zccp_client_send (sensor, "fan.direction", "normal");
-    zccp_client_send (sensor, "power.total", "15.3");
-    zccp_client_send (sensor, "special", "FINISHED");
+    zccp_client_send (sensor, "temp.cpu.1", NULL, "33");
+    zccp_client_send (sensor, "temp.cpu.2", NULL,"200");
+    zccp_client_send (sensor, "temp.cpu.3", NULL,"40");
+    zccp_client_send (sensor, "temp.cpu.4", NULL,"56");
+    zccp_client_send (sensor, "fan.speed", NULL,"1200");
+    zccp_client_send (sensor, "fan.direction", NULL,"normal");
+    zccp_client_send (sensor, "power.total", NULL,"15.3");
+    zccp_client_send (sensor, "special", NULL,"FINISHED");
 
     while (true) {
-        char *type, *body;
-        int rc = zccp_client_recv (logger, &type, &body);
+        char *sender, *address;
+        zhash_t *headers;
+        zmsg_t *content;
+        int rc = zccp_client_recv (logger, &sender, &address, &headers, &content);
         assert (rc == 0);
         if (verbose)
-            printf ("%s=%s\n", type, body);
-        if (streq (body, "FINISHED"))
+            printf ("%s=%s\n", sender, address);
+        if (streq (zmsg_popstr(content), "FINISHED"))
             break;
     }
     zccp_client_destroy (&logger);

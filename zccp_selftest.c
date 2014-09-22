@@ -2,7 +2,7 @@
 
 int main (void)
 {
-    zccp_server_test (false);
-    zccp_client_test (false);
+    zccp_server_test (true);
+    zccp_client_test (true);
     return 0;
 }

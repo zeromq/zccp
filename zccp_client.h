@@ -18,7 +18,7 @@ typedef struct _zccp_client_t zccp_client_t;
 //  expecting READY back. The client identifier is a string used for
 //  REQUEST/REPLY exchanges.
 zccp_client_t *
-    zccp_client_new (const char *server, const char *identifier);
+    zccp_client_new (const char *identifier, const char *server, zhash_t *headers);
 
 //  Destructor
 void
@@ -26,16 +26,16 @@ void
 
 //  Subscribe to some set of notifications
 void
-    zccp_client_subscribe (zccp_client_t *self, const char *subscription);
+    zccp_client_subscribe (zccp_client_t *self, const char *subscription, zhash_t *headers);
 
 //  Send a notification message of some type
 void
-    zccp_client_send (zccp_client_t *self, const char *type, const char *message);
+    zccp_client_send (zccp_client_t *self, const char *type, zhash_t *headers, const char *message);
 
 //  Wait for and receive next notification message; returns 0 if OK,
 //  else returns -1.
 int
-    zccp_client_recv (zccp_client_t *self, char **type, char **body);
+    zccp_client_recv (zccp_client_t *self, char **sender, char **address, zhash_t **headers, zmsg_t **content);
 
 // Self test of this class
 void

@@ -20,46 +20,57 @@
 
 /*  These are the zccp_msg messages:
 
-    HELLO - Client says hello to server and provides its identifier.
+    HELLO - Client greets the server and provides its identifier.
         identifier          string      Client identifier
+        headers             dictionary  Client properties
 
-    GOODBYE - Client says goodbye to server.
+    HELLO_OK - Server confirms client
+        headers             dictionary  Server properties
 
-    READY - Server confirms client HELLO or GOODBYE
-
-    SUBSCRIBE - Client subscribes to some set of notifications
+    SUBSCRIBE - Client subscribes to some set of messages
         expression          string      Regular expression
+        headers             dictionary  Subscription options
 
-    PUBLISH - Client publishes a notification
-        header              string      Header, for matching
-        content             chunk       Content
+    PUBLISH - Client publishes a message to the server
+        address             string      Destination routing key
+        headers             dictionary  Content header fields
+        content             msg         Content, as multipart message
 
-    DELIVER - Server delivers notification to client
-        origin              string      A client identifier
-        header              string      Header
-        content             chunk       Content
+    DIRECT - Client sends a message to a specific client
+        address             string      Destination client identifier
+        headers             dictionary  Content header fields
+        content             msg         Content, as multipart message
 
-    REQUEST - Request some action
-        method              string      Requested method
-        content             chunk       Content
+    DELIVER - Server delivers a message to client
+        sender              string      Originating client
+        address             string      Destination address
+        headers             dictionary  Content header fields
+        content             msg         Content, as multipart message
 
-    REPLY - Reply to a command request
-        status              number 2    Success/failure status
-        content             chunk       Content
+    GOODBYE - Client says goodbye to server
+
+    GOODBYE_OK - Server confirms client signoff
+        headers             dictionary  Session statistics
+
+    PING - Client or server pings the other party
+
+    PING_OK - Reply to a PING
 
     INVALID - Client sent a message that was not valid at this time
 */
 
 
 #define ZCCP_MSG_HELLO                      1
-#define ZCCP_MSG_GOODBYE                    2
-#define ZCCP_MSG_READY                      3
-#define ZCCP_MSG_SUBSCRIBE                  4
-#define ZCCP_MSG_PUBLISH                    5
+#define ZCCP_MSG_HELLO_OK                   2
+#define ZCCP_MSG_SUBSCRIBE                  3
+#define ZCCP_MSG_PUBLISH                    4
+#define ZCCP_MSG_DIRECT                     5
 #define ZCCP_MSG_DELIVER                    6
-#define ZCCP_MSG_REQUEST                    7
-#define ZCCP_MSG_REPLY                      8
-#define ZCCP_MSG_INVALID                    9
+#define ZCCP_MSG_GOODBYE                    7
+#define ZCCP_MSG_GOODBYE_OK                 8
+#define ZCCP_MSG_PING                       9
+#define ZCCP_MSG_PING_OK                    10
+#define ZCCP_MSG_INVALID                    11
 
 #ifdef __cplusplus
 extern "C" {
@@ -109,47 +120,61 @@ int
 //  Encode the HELLO 
 zmsg_t *
     zccp_msg_encode_hello (
-        const char *identifier);
+        const char *identifier,
+        zhash_t *headers);
+
+//  Encode the HELLO_OK 
+zmsg_t *
+    zccp_msg_encode_hello_ok (
+        zhash_t *headers);
+
+//  Encode the SUBSCRIBE 
+zmsg_t *
+    zccp_msg_encode_subscribe (
+        const char *expression,
+        zhash_t *headers);
+
+//  Encode the PUBLISH 
+zmsg_t *
+    zccp_msg_encode_publish (
+        const char *address,
+        zhash_t *headers,
+        zmsg_t *content);
+
+//  Encode the DIRECT 
+zmsg_t *
+    zccp_msg_encode_direct (
+        const char *address,
+        zhash_t *headers,
+        zmsg_t *content);
+
+//  Encode the DELIVER 
+zmsg_t *
+    zccp_msg_encode_deliver (
+        const char *sender,
+        const char *address,
+        zhash_t *headers,
+        zmsg_t *content);
 
 //  Encode the GOODBYE 
 zmsg_t *
     zccp_msg_encode_goodbye (
 );
 
-//  Encode the READY 
+//  Encode the GOODBYE_OK 
 zmsg_t *
-    zccp_msg_encode_ready (
+    zccp_msg_encode_goodbye_ok (
+        zhash_t *headers);
+
+//  Encode the PING 
+zmsg_t *
+    zccp_msg_encode_ping (
 );
 
-//  Encode the SUBSCRIBE 
+//  Encode the PING_OK 
 zmsg_t *
-    zccp_msg_encode_subscribe (
-        const char *expression);
-
-//  Encode the PUBLISH 
-zmsg_t *
-    zccp_msg_encode_publish (
-        const char *header,
-        zchunk_t *content);
-
-//  Encode the DELIVER 
-zmsg_t *
-    zccp_msg_encode_deliver (
-        const char *origin,
-        const char *header,
-        zchunk_t *content);
-
-//  Encode the REQUEST 
-zmsg_t *
-    zccp_msg_encode_request (
-        const char *method,
-        zchunk_t *content);
-
-//  Encode the REPLY 
-zmsg_t *
-    zccp_msg_encode_reply (
-        uint16_t status,
-        zchunk_t *content);
+    zccp_msg_encode_ping_ok (
+);
 
 //  Encode the INVALID 
 zmsg_t *
@@ -161,52 +186,67 @@ zmsg_t *
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.
 int
     zccp_msg_send_hello (void *output,
-        const char *identifier);
+        const char *identifier,
+        zhash_t *headers);
+    
+//  Send the HELLO_OK to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+int
+    zccp_msg_send_hello_ok (void *output,
+        zhash_t *headers);
+    
+//  Send the SUBSCRIBE to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+int
+    zccp_msg_send_subscribe (void *output,
+        const char *expression,
+        zhash_t *headers);
+    
+//  Send the PUBLISH to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+int
+    zccp_msg_send_publish (void *output,
+        const char *address,
+        zhash_t *headers,
+        zmsg_t *content);
+    
+//  Send the DIRECT to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+int
+    zccp_msg_send_direct (void *output,
+        const char *address,
+        zhash_t *headers,
+        zmsg_t *content);
+    
+//  Send the DELIVER to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+int
+    zccp_msg_send_deliver (void *output,
+        const char *sender,
+        const char *address,
+        zhash_t *headers,
+        zmsg_t *content);
     
 //  Send the GOODBYE to the output in one step
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.
 int
     zccp_msg_send_goodbye (void *output);
     
-//  Send the READY to the output in one step
+//  Send the GOODBYE_OK to the output in one step
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.
 int
-    zccp_msg_send_ready (void *output);
+    zccp_msg_send_goodbye_ok (void *output,
+        zhash_t *headers);
     
-//  Send the SUBSCRIBE to the output in one step
+//  Send the PING to the output in one step
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.
 int
-    zccp_msg_send_subscribe (void *output,
-        const char *expression);
+    zccp_msg_send_ping (void *output);
     
-//  Send the PUBLISH to the output in one step
+//  Send the PING_OK to the output in one step
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.
 int
-    zccp_msg_send_publish (void *output,
-        const char *header,
-        zchunk_t *content);
-    
-//  Send the DELIVER to the output in one step
-//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
-int
-    zccp_msg_send_deliver (void *output,
-        const char *origin,
-        const char *header,
-        zchunk_t *content);
-    
-//  Send the REQUEST to the output in one step
-//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
-int
-    zccp_msg_send_request (void *output,
-        const char *method,
-        zchunk_t *content);
-    
-//  Send the REPLY to the output in one step
-//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
-int
-    zccp_msg_send_reply (void *output,
-        uint16_t status,
-        zchunk_t *content);
+    zccp_msg_send_ping_ok (void *output);
     
 //  Send the INVALID to the output in one step
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.
@@ -241,45 +281,56 @@ const char *
 void
     zccp_msg_set_identifier (zccp_msg_t *self, const char *format, ...);
 
+//  Get/set the headers field
+zhash_t *
+    zccp_msg_headers (zccp_msg_t *self);
+//  Get the headers field and transfer ownership to caller
+zhash_t *
+    zccp_msg_get_headers (zccp_msg_t *self);
+//  Set the headers field, transferring ownership from caller
+void
+    zccp_msg_set_headers (zccp_msg_t *self, zhash_t **headers_p);
+    
+//  Get/set a value in the headers dictionary
+const char *
+    zccp_msg_headers_string (zccp_msg_t *self,
+        const char *key, const char *default_value);
+uint64_t
+    zccp_msg_headers_number (zccp_msg_t *self,
+        const char *key, uint64_t default_value);
+void
+    zccp_msg_headers_insert (zccp_msg_t *self,
+        const char *key, const char *format, ...);
+size_t
+    zccp_msg_headers_size (zccp_msg_t *self);
+
 //  Get/set the expression field
 const char *
     zccp_msg_expression (zccp_msg_t *self);
 void
     zccp_msg_set_expression (zccp_msg_t *self, const char *format, ...);
 
-//  Get/set the header field
+//  Get/set the address field
 const char *
-    zccp_msg_header (zccp_msg_t *self);
+    zccp_msg_address (zccp_msg_t *self);
 void
-    zccp_msg_set_header (zccp_msg_t *self, const char *format, ...);
+    zccp_msg_set_address (zccp_msg_t *self, const char *format, ...);
 
 //  Get a copy of the content field
-zchunk_t *
+zmsg_t *
     zccp_msg_content (zccp_msg_t *self);
 //  Get the content field and transfer ownership to caller
-zchunk_t *
+zmsg_t *
     zccp_msg_get_content (zccp_msg_t *self);
 //  Set the content field, transferring ownership from caller
 void
-    zccp_msg_set_content (zccp_msg_t *self, zchunk_t **chunk_p);
+    zccp_msg_set_content (zccp_msg_t *self, zmsg_t **msg_p);
 
-//  Get/set the origin field
+//  Get/set the sender field
 const char *
-    zccp_msg_origin (zccp_msg_t *self);
+    zccp_msg_sender (zccp_msg_t *self);
 void
-    zccp_msg_set_origin (zccp_msg_t *self, const char *format, ...);
-
-//  Get/set the method field
-const char *
-    zccp_msg_method (zccp_msg_t *self);
-void
-    zccp_msg_set_method (zccp_msg_t *self, const char *format, ...);
-
-//  Get/set the status field
-uint16_t
-    zccp_msg_status (zccp_msg_t *self);
-void
-    zccp_msg_set_status (zccp_msg_t *self, uint16_t status);
+    zccp_msg_set_sender (zccp_msg_t *self, const char *format, ...);
 
 //  Self test of this class
 int
