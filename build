@@ -13,9 +13,6 @@ test $? -ne 0 && exit
 gcc -o zccp_sh zccp_sh.c zccp_msg.c zccp_server.c zccp_client.c -lczmq -lzmq -g
 test $? -ne 0 && exit
 
-#   Build test client
-gcc -o zccp_test_client zccp_test_client.c zccp_msg.c zccp_client.c zccp_server.c -lczmq -lzmq -g
-
 #   Build selftest
 gcc -o zccp_selftest zccp_selftest.c zccp_msg.c zccp_server.c zccp_client.c -lczmq -lzmq -g
 test $? -ne 0 && exit

@@ -3,6 +3,5 @@ zccpd
 core
 zccp_sh
 zccpd
-zccp_test_client
 zccp_selftest
 

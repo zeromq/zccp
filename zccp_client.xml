@@ -7,6 +7,7 @@
     package_dir = "."
     >
     This is a client implementation of the ZeroMQ Command & Control Protocol.
+    <include filename = "license.xml" />
 
     <state name = "start">
         <event name = "connect" next = "connecting">

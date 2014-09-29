@@ -6,6 +6,7 @@
     package_dir = "."
     project_header = "czmq.h"
     >
+    <include filename = "license.xml" />
     <grammar>
     ZCCP = greeting ( traffic / heartbeat ) signoff
     
