@@ -7,10 +7,16 @@
     statements. DO NOT MAKE ANY CHANGES YOU WISH TO KEEP. The correct places
     for commits are:
 
-    * The XML model used for this code generation: zccp_server.xml
-    * The code generation script that built this file: zproto_server_c
+     * The XML model used for this code generation: zccp_server.xml, or
+     * The code generation script that built this file: zproto_server_c
     ************************************************************************
 
+    Copyright (c) the Contributors as noted in the AUTHORS file.       
+    This file is part of zbroker, the ZeroMQ broker project.           
+                                                                       
+    This Source Code Form is subject to the terms of the Mozilla Public
+    License, v. 2.0. If a copy of the MPL was not distributed with this
+    file, You can obtain one at http://mozilla.org/MPL/2.0/.           
     =========================================================================
 */
 
@@ -113,7 +119,7 @@ static void
 static void
     s_client_execute (s_client_t *client, int event);
 static int
-    s_client_wakeup (zloop_t *loop, int timer_id, void *argument);
+    s_client_handle_wakeup (zloop_t *loop, int timer_id, void *argument);
 static void
     register_new_client (client_t *self);
 static void
@@ -165,7 +171,7 @@ engine_set_wakeup_event (client_t *client, size_t delay, event_t event)
             self->wakeup_timer = 0;
         }
         self->wakeup_timer = zloop_timer (
-            self->server->loop, delay, 1, s_client_wakeup, self);
+            self->server->loop, delay, 1, s_client_handle_wakeup, self);
         self->wakeup_event = event;
     }
 }
@@ -415,9 +421,9 @@ s_client_filter_mailbox (s_client_t *self)
 //  Execute state machine as long as we have events
 
 static void
-s_client_execute (s_client_t *self, int event)
+s_client_execute (s_client_t *self, event_t event)
 {
-    self->next_event = (event_t) event;
+    self->next_event = event;
     //  Cancel wakeup timer, if any was pending
     if (self->wakeup_timer) {
         zloop_timer_end (self->server->loop, self->wakeup_timer);
@@ -443,7 +449,7 @@ s_client_execute (s_client_t *self, int event)
                         register_new_client (&self->client);
                     }
                     if (!self->exception) {
-                        //  send hello_ok
+                        //  send HELLO_OK
                         if (self->server->verbose)
                             zsys_debug ("%s:         $ send HELLO_OK",
                                 self->log_prefix);
@@ -458,7 +464,7 @@ s_client_execute (s_client_t *self, int event)
                 else
                 if (self->event == goodbye_event) {
                     if (!self->exception) {
-                        //  send goodbye_ok
+                        //  send GOODBYE_OK
                         if (self->server->verbose)
                             zsys_debug ("%s:         $ send GOODBYE_OK",
                                 self->log_prefix);
@@ -486,7 +492,7 @@ s_client_execute (s_client_t *self, int event)
                 else {
                     //  Handle unexpected protocol events
                     if (!self->exception) {
-                        //  send invalid
+                        //  send INVALID
                         if (self->server->verbose)
                             zsys_debug ("%s:         $ send INVALID",
                                 self->log_prefix);
@@ -512,6 +518,16 @@ s_client_execute (s_client_t *self, int event)
                             zsys_debug ("%s:         $ store new subscription", self->log_prefix);
                         store_new_subscription (&self->client);
                     }
+                    if (!self->exception) {
+                        //  send SUBSCRIBE_OK
+                        if (self->server->verbose)
+                            zsys_debug ("%s:         $ send SUBSCRIBE_OK",
+                                self->log_prefix);
+                        zccp_msg_set_id (self->client.reply, ZCCP_MSG_SUBSCRIBE_OK);
+                        zccp_msg_send (&self->client.reply, self->server->router);
+                        self->client.reply = zccp_msg_new (0);
+                        zccp_msg_set_routing_id (self->client.reply, self->routing_id);
+                    }
                 }
                 else
                 if (self->event == publish_event) {
@@ -534,7 +550,7 @@ s_client_execute (s_client_t *self, int event)
                         get_content_to_publish (&self->client);
                     }
                     if (!self->exception) {
-                        //  send deliver
+                        //  send DELIVER
                         if (self->server->verbose)
                             zsys_debug ("%s:         $ send DELIVER",
                                 self->log_prefix);
@@ -547,7 +563,7 @@ s_client_execute (s_client_t *self, int event)
                 else
                 if (self->event == goodbye_event) {
                     if (!self->exception) {
-                        //  send goodbye_ok
+                        //  send GOODBYE_OK
                         if (self->server->verbose)
                             zsys_debug ("%s:         $ send GOODBYE_OK",
                                 self->log_prefix);
@@ -575,7 +591,7 @@ s_client_execute (s_client_t *self, int event)
                 else {
                     //  Handle unexpected protocol events
                     if (!self->exception) {
-                        //  send invalid
+                        //  send INVALID
                         if (self->server->verbose)
                             zsys_debug ("%s:         $ send INVALID",
                                 self->log_prefix);
@@ -596,7 +612,7 @@ s_client_execute (s_client_t *self, int event)
             case external_state:
                 if (self->event == goodbye_event) {
                     if (!self->exception) {
-                        //  send goodbye_ok
+                        //  send GOODBYE_OK
                         if (self->server->verbose)
                             zsys_debug ("%s:         $ send GOODBYE_OK",
                                 self->log_prefix);
@@ -624,7 +640,7 @@ s_client_execute (s_client_t *self, int event)
                 else {
                     //  Handle unexpected protocol events
                     if (!self->exception) {
-                        //  send invalid
+                        //  send INVALID
                         if (self->server->verbose)
                             zsys_debug ("%s:         $ send INVALID",
                                 self->log_prefix);
@@ -670,7 +686,7 @@ s_client_execute (s_client_t *self, int event)
 //  zloop callback when client inactivity timer expires
 
 static int
-s_client_expired (zloop_t *loop, int timer_id, void *argument)
+s_client_handle_timeout (zloop_t *loop, int timer_id, void *argument)
 {
     s_client_t *self = (s_client_t *) argument;
     s_client_execute (self, expired_event);
@@ -680,7 +696,7 @@ s_client_expired (zloop_t *loop, int timer_id, void *argument)
 //  zloop callback when client wakeup timer expires
 
 static int
-s_client_wakeup (zloop_t *loop, int timer_id, void *argument)
+s_client_handle_wakeup (zloop_t *loop, int timer_id, void *argument)
 {
     s_client_t *self = (s_client_t *) argument;
     s_client_execute (self, self->wakeup_event);
@@ -779,7 +795,7 @@ s_server_apply_config (s_server_t *self)
         if (streq (zconfig_name (section), "bind")) {
             char *endpoint = zconfig_resolve (section, "endpoint", "?");
             if (zsock_bind (self->router, "%s", endpoint) == -1)
-                zsys_warning ("failed to bind to %s", endpoint);
+                zsys_warning ("could not bind to %s", endpoint);
         }
         section = zconfig_next (section);
     }
@@ -814,7 +830,7 @@ s_server_api_message (zloop_t *loop, zsock_t *reader, void *argument)
         char *endpoint = zmsg_popstr (msg);
         self->port = zsock_bind (self->router, "%s", endpoint);
         if (self->port == -1)
-            zsys_warning ("failed to bind to %s", endpoint);
+            zsys_warning ("could not bind to %s", endpoint);
         free (endpoint);
     }
     else
@@ -887,7 +903,7 @@ s_server_client_message (zloop_t *loop, zsock_t *reader, void *argument)
         zloop_timer_end (self->loop, client->expiry_timer);
     //  Reset expiry timer
     client->expiry_timer = zloop_timer (
-        self->loop, self->timeout, 1, s_client_expired, client);
+        self->loop, self->timeout, 1, s_client_handle_timeout, client);
         
     //  Queue request and possibly pass it to client state machine
     zlist_append (client->mailbox, msg);

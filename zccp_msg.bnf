@@ -1,12 +1,14 @@
 The following ABNF grammar defines the ZeroMQ Command & Control Protocol:
 
-    ZCCP = greeting traffic signoff
+    ZCCP = greeting ( traffic / heartbeat ) signoff
     
     greeting = C:HELLO S:HELLO-OK
     
     traffic = C:SUBSCRIBE / C:PUBLISH / C:DIRECT /
               S:DELIVER
-              
+
+    heartbeat = S:PING C:PING-OK
+    
     signoff = C:GOODBYE S:GOODBYE-OK
 
     ;         Client greets the server and provides its identifier.
@@ -24,40 +26,43 @@ The following ABNF grammar defines the ZeroMQ Command & Control Protocol:
     expression      = string                ; Regular expression
     headers         = dictionary            ; Subscription options
 
+    ;         Server confirms subscription.
+    subscribe_ok    = signature %d4
+
     ;         Client publishes a message to the server
-    publish         = signature %d4 address headers content
-    address         = string                ; Destination routing key
+    publish         = signature %d5 address headers content
+    address         = string                ; Logical address
     headers         = dictionary            ; Content header fields
     content         = msg                   ; Content, as multipart message
 
     ;         Client sends a message to a specific client
-    direct          = signature %d5 address headers content
-    address         = string                ; Destination client identifier
+    direct          = signature %d6 address headers content
+    address         = string                ; Client identifier
     headers         = dictionary            ; Content header fields
     content         = msg                   ; Content, as multipart message
 
     ;         Server delivers a message to client
-    deliver         = signature %d6 sender address headers content
+    deliver         = signature %d7 sender address headers content
     sender          = string                ; Originating client
-    address         = string                ; Destination address
+    address         = string                ; Message address
     headers         = dictionary            ; Content header fields
     content         = msg                   ; Content, as multipart message
 
     ;         Client says goodbye to server
-    goodbye         = signature %d7
+    goodbye         = signature %d8
 
     ;         Server confirms client signoff
-    goodbye_ok      = signature %d8 headers
+    goodbye_ok      = signature %d9 headers
     headers         = dictionary            ; Session statistics
 
-    ;         Client or server pings the other party
-    ping            = signature %d9
+    ;         Server pings the client if there's no traffic
+    ping            = signature %d10
 
-    ;         Reply to a PING
-    ping_ok         = signature %d10
+    ;         Client replies to a PING
+    ping_ok         = signature %d11
 
     ;         Client sent a message that was not valid at this time
-    invalid         = signature %d11
+    invalid         = signature %d12
 
     ; A list of name/value pairs
     dictionary      = dict-count *( dict-name dict-value )
@@ -75,3 +80,4 @@ The following ABNF grammar defines the ZeroMQ Command & Control Protocol:
     ; Numbers are unsigned integers in network byte order
     number-1        = 1OCTET
     number-4        = 4OCTET
+

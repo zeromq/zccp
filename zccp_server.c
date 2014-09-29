@@ -301,10 +301,23 @@ zccp_server_test (bool verbose)
 
     //  Check our subscription engine; this should deliver us 2 messages
     zccp_msg_send_subscribe (client, "H.*O", NULL);
+    message = zccp_msg_recv (client);
+    assert (message);
+    assert (zccp_msg_id (message) == ZCCP_MSG_SUBSCRIBE_OK);
+    zccp_msg_destroy (&message);
+
     zccp_msg_send_subscribe (client, "H.*O", NULL);
+    message = zccp_msg_recv (client);
+    assert (message);
+    assert (zccp_msg_id (message) == ZCCP_MSG_SUBSCRIBE_OK);
+    zccp_msg_destroy (&message);
+    
     zccp_msg_send_subscribe (client, "HELLO", NULL);
-    //  Artificial delay to ensure subscriptions all arrive before we continue
-    zclock_sleep (100);
+    message = zccp_msg_recv (client);
+    assert (message);
+    assert (zccp_msg_id (message) == ZCCP_MSG_SUBSCRIBE_OK);
+    zccp_msg_destroy (&message);
+    
     zmsg_t *content = zmsg_new ();
     zmsg_pushstr (content, "TEST");
     zccp_msg_send_publish (device, "(HELLO, WORLD)", NULL, content);

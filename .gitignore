@@ -1,4 +1,7 @@
 *.o
 zccpd
 core
+zccp_sh
+zccpd
+zccp_selftest
 

@@ -9,10 +9,16 @@
     statements. DO NOT MAKE ANY CHANGES YOU WISH TO KEEP. The correct places
     for commits are:
 
-    * The XML model used for this code generation: zccp_msg.xml
-    * The code generation script that built this file: zproto_codec_c
+     * The XML model used for this code generation: zccp_msg.xml, or
+     * The code generation script that built this file: zproto_codec_c
     ************************************************************************
     
+    Copyright (c) the Contributors as noted in the AUTHORS file.       
+    This file is part of zbroker, the ZeroMQ broker project.           
+                                                                       
+    This Source Code Form is subject to the terms of the Mozilla Public
+    License, v. 2.0. If a copy of the MPL was not distributed with this
+    file, You can obtain one at http://mozilla.org/MPL/2.0/.           
     =========================================================================
 */
 
@@ -37,7 +43,7 @@ struct _zccp_msg_t {
     zhash_t *headers;                   //  Client properties
     size_t headers_bytes;               //  Size of dictionary content
     char *expression;                   //  Regular expression
-    char *address;                      //  Destination routing key
+    char *address;                      //  Logical address
     zmsg_t *content;                    //  Content, as multipart message
     char *sender;                       //  Originating client
 };
@@ -300,6 +306,9 @@ zccp_msg_decode (zmsg_t **msg_p)
             }
             break;
 
+        case ZCCP_MSG_SUBSCRIBE_OK:
+            break;
+
         case ZCCP_MSG_PUBLISH:
             GET_STRING (self->address);
             {
@@ -489,6 +498,9 @@ zccp_msg_encode (zccp_msg_t **self_p)
             frame_size += self->headers_bytes;
             break;
             
+        case ZCCP_MSG_SUBSCRIBE_OK:
+            break;
+            
         case ZCCP_MSG_PUBLISH:
             //  address is a string with 1-byte length
             frame_size++;       //  Size is one octet
@@ -645,6 +657,9 @@ zccp_msg_encode (zccp_msg_t **self_p)
                 PUT_NUMBER4 (0);    //  Empty dictionary
             break;
 
+        case ZCCP_MSG_SUBSCRIBE_OK:
+            break;
+
         case ZCCP_MSG_PUBLISH:
             if (self->address) {
                 PUT_STRING (self->address);
@@ -740,28 +755,46 @@ zccp_msg_encode (zccp_msg_t **self_p)
         zccp_msg_destroy (self_p);
         return NULL;
     }
-    //  Now send the content field if set
+    //  Now send the message field if there is any
     if (self->id == ZCCP_MSG_PUBLISH) {
-        zframe_t *content_part = zmsg_pop (self->content);
-        while (content_part) {
-            zmsg_append (msg, &content_part);
-            content_part = zmsg_pop (self->content);
+        if (self->content) {
+            zframe_t *frame = zmsg_pop (self->content);
+            while (frame) {
+                zmsg_append (msg, &frame);
+                frame = zmsg_pop (self->content);
+            }
+        }
+        else {
+            zframe_t *frame = zframe_new (NULL, 0);
+            zmsg_append (msg, &frame);
         }
     }
-    //  Now send the content field if set
+    //  Now send the message field if there is any
     if (self->id == ZCCP_MSG_DIRECT) {
-        zframe_t *content_part = zmsg_pop (self->content);
-        while (content_part) {
-            zmsg_append (msg, &content_part);
-            content_part = zmsg_pop (self->content);
+        if (self->content) {
+            zframe_t *frame = zmsg_pop (self->content);
+            while (frame) {
+                zmsg_append (msg, &frame);
+                frame = zmsg_pop (self->content);
+            }
+        }
+        else {
+            zframe_t *frame = zframe_new (NULL, 0);
+            zmsg_append (msg, &frame);
         }
     }
-    //  Now send the content field if set
+    //  Now send the message field if there is any
     if (self->id == ZCCP_MSG_DELIVER) {
-        zframe_t *content_part = zmsg_pop (self->content);
-        while (content_part) {
-            zmsg_append (msg, &content_part);
-            content_part = zmsg_pop (self->content);
+        if (self->content) {
+            zframe_t *frame = zmsg_pop (self->content);
+            while (frame) {
+                zmsg_append (msg, &frame);
+                frame = zmsg_pop (self->content);
+            }
+        }
+        else {
+            zframe_t *frame = zframe_new (NULL, 0);
+            zmsg_append (msg, &frame);
         }
     }
     //  Destroy zccp_msg object
@@ -913,6 +946,18 @@ zccp_msg_encode_subscribe (
     zccp_msg_set_expression (self, expression);
     zhash_t *headers_copy = zhash_dup (headers);
     zccp_msg_set_headers (self, &headers_copy);
+    return zccp_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode SUBSCRIBE_OK message
+
+zmsg_t * 
+zccp_msg_encode_subscribe_ok (
+)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_SUBSCRIBE_OK);
     return zccp_msg_encode (&self);
 }
 
@@ -1088,6 +1133,18 @@ zccp_msg_send_subscribe (
 
 
 //  --------------------------------------------------------------------------
+//  Send the SUBSCRIBE_OK to the socket in one step
+
+int
+zccp_msg_send_subscribe_ok (
+    void *output)
+{
+    zccp_msg_t *self = zccp_msg_new (ZCCP_MSG_SUBSCRIBE_OK);
+    return zccp_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
 //  Send the PUBLISH to the socket in one step
 
 int
@@ -1239,6 +1296,9 @@ zccp_msg_dup (zccp_msg_t *self)
             copy->headers = self->headers? zhash_dup (self->headers): NULL;
             break;
 
+        case ZCCP_MSG_SUBSCRIBE_OK:
+            break;
+
         case ZCCP_MSG_PUBLISH:
             copy->address = self->address? strdup (self->address): NULL;
             copy->headers = self->headers? zhash_dup (self->headers): NULL;
@@ -1335,6 +1395,10 @@ zccp_msg_print (zccp_msg_t *self)
             }
             else
                 zsys_debug ("(NULL)");
+            break;
+            
+        case ZCCP_MSG_SUBSCRIBE_OK:
+            zsys_debug ("ZCCP_MSG_SUBSCRIBE_OK:");
             break;
             
         case ZCCP_MSG_PUBLISH:
@@ -1495,6 +1559,9 @@ zccp_msg_command (zccp_msg_t *self)
             break;
         case ZCCP_MSG_SUBSCRIBE:
             return ("SUBSCRIBE");
+            break;
+        case ZCCP_MSG_SUBSCRIBE_OK:
+            return ("SUBSCRIBE_OK");
             break;
         case ZCCP_MSG_PUBLISH:
             return ("PUBLISH");
@@ -1835,6 +1902,24 @@ zccp_msg_test (bool verbose)
         assert (zccp_msg_headers_size (self) == 2);
         assert (streq (zccp_msg_headers_string (self, "Name", "?"), "Brutus"));
         assert (zccp_msg_headers_number (self, "Age", 0) == 43);
+        zccp_msg_destroy (&self);
+    }
+    self = zccp_msg_new (ZCCP_MSG_SUBSCRIBE_OK);
+    
+    //  Check that _dup works on empty message
+    copy = zccp_msg_dup (self);
+    assert (copy);
+    zccp_msg_destroy (&copy);
+
+    //  Send twice from same object
+    zccp_msg_send_again (self, output);
+    zccp_msg_send (&self, output);
+
+    for (instance = 0; instance < 2; instance++) {
+        self = zccp_msg_recv (input);
+        assert (self);
+        assert (zccp_msg_routing_id (self));
+        
         zccp_msg_destroy (&self);
     }
     self = zccp_msg_new (ZCCP_MSG_PUBLISH);
