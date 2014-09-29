@@ -1,0 +1,148 @@
+<class
+    name = "zccp_client"
+    title = "ZCCP Client"
+    script = "zproto_client_c"
+    protocol_class = "zccp_msg"
+    project_header = "czmq.h"
+    package_dir = "."
+    >
+    This is a client implementation of the ZeroMQ Command & Control Protocol.
+
+    <state name = "start">
+        <event name = "connect" next = "connecting">
+            <action name = "connect to server endpoint" />
+            <action name = "use connect timeout" />
+            <action name = "send" message = "HELLO" />
+        </event>
+    </state>
+
+    <state name = "connecting" inherit = "defaults">
+        <event name = "HELLO OK" next = "connected">
+            <action name = "signal success" />
+            <action name = "use presence timeout" />
+        </event>
+        <event name = "expired">
+            <action name = "signal server not present" />
+            <action name = "terminate" />
+        </event>
+    </state>
+    
+    <state name = "connected" inherit = "defaults">
+        <event name = "subscribe" next = "subscribing">
+            <action name = "send" message = "SUBSCRIBE" />
+        </event>
+        <event name = "publish">
+            <action name = "send" message = "PUBLISH" />
+        </event>
+        <event name = "direct">
+            <action name = "send" message = "DIRECT" />
+        </event>
+        <event name = "DELIVER">
+            <action name = "deliver message to application" />
+        </event>
+        <event name = "PING">
+            <action name = "send" message = "PING OK" />
+        </event>
+        <event name = "close connection" next = "disconnecting">
+            <action name = "send" message = "GOODBYE" />
+        </event>
+        <event name = "error">
+            <action name = "terminate" />
+        </event>
+    </state>
+
+    <state name = "subscribing" inherit = "defaults">
+        <event name = "SUBSCRIBE OK" next = "connected">
+            <action name = "signal success" />
+        </event>
+    </state>
+
+    <state name = "disconnecting" inherit = "defaults">
+        <event name = "GOODBYE OK">
+            <action name = "terminate" />
+        </event>
+        <event name = "expired">
+            <action name = "terminate" />
+        </event>
+    </state>
+
+   <state name = "defaults">
+        <!-- Server didn't respond for some time -->
+        <event name = "expired" next = "reconnecting">
+            <action name = "use connect timeout" />
+            <action name = "send" message = "HELLO" />
+        </event>
+        <!-- Server lost our connection state -->
+        <event name = "INVALID" next = "reconnecting">
+            <action name = "use connect timeout" />
+            <action name = "send" message = "HELLO" />
+        </event>
+        <event name = "*">
+            <!-- Discard any other incoming events -->
+        </event>
+   </state>
+   
+    <state name = "reconnecting" inherit = "defaults">
+        <event name = "HELLO OK" next = "connected">
+        </event>
+    </state>
+
+    <!-- API methods -->
+    <method name = "connect" return = "status"> 
+    Connect to server and return only when there's a successful connection or 
+    the timeout in msecs expires. Returns 0 if successfully connected, else -1.
+        <field constant = "CONNECT" />
+        <field argument = "endpoint" type = "string" />
+        <field argument = "timeout" type = "number" />
+        <accept reply = "SUCCESS" />
+        <accept reply = "FAILURE" />
+    </method>
+
+    <method name = "subscribe" return = "status">
+    Subscribe to all messages sent to matching addresses. The expression is a
+    regular expression using the CZMQ zrex syntax. The most useful elements
+    are: ^ and $ to match the start and end, . to match any character,
+    \s and \S to match whitespace and non-whitespace, \d and \D to match a
+    digit and non-digit, \a and \A to match alphabetic and non-alphabetic,
+    \w and \W to match alphanumeric and non-alphanumeric, + for one or more
+    repetitions, * for zero or more repetitions, and ( ) to create groups.
+    Returns 0 if subscription was successful, else -1.
+        <field constant = "SUBSCRIBE" />
+        <field argument = "expression" type = "string" />
+        <accept reply = "SUCCESS" />
+        <accept reply = "FAILURE" />
+    </method>
+
+    <method name = "publish">
+    Publish a message on the server, using a logical address. All subscribers
+    to that address will receive a copy of the message. The server does not
+    store messages. If a message is published before subscribers arrive, they
+    will miss it. Currently only supports string contents. Does not return a
+    status value; publish commands are asynchronous and unconfirmed.
+        <field constant = "PUBLISH" />
+        <field argument = "address" type = "string" />
+        <field argument = "content" type = "string" />
+    </method>
+    
+    <method name = "recv" return = "content">
+    Receive next message from server. Returns the message content, as a string,
+    if any. The caller should not modify or free this string.
+        <accept reply = "MESSAGE" />
+    </method>
+
+    <!-- These are the replies from the actor to the API -->
+    <reply name = "SUCCESS">
+        <field property = "status" type = "number" />
+    </reply>
+
+    <reply name = "FAILURE">
+        <field property = "status" type = "number" />
+        <field property = "reason" type = "string" />
+    </reply>
+    
+    <reply name = "MESSAGE">
+        <field property = "sender" type = "string" />
+        <field property = "address" type = "string" />
+        <field property = "content" type = "string" />
+    </reply>
+</class>

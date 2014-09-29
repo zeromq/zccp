@@ -7,8 +7,8 @@
     statements. DO NOT MAKE ANY CHANGES YOU WISH TO KEEP. The correct places
     for commits are:
 
-    * The XML model used for this code generation: zccp_server.xml
-    * The code generation script that built this file: zproto_server_c
+     * The XML model used for this code generation: zccp_server.xml, or
+     * The code generation script that built this file: zproto_server_c
     ************************************************************************
 
     =========================================================================
@@ -34,7 +34,7 @@ extern "C" {
 //  
 //  Enable verbose logging of commands and activity:
 //
-//      zstr_send (ca, "VERBOSE");
+//      zstr_send (zccp_server, "VERBOSE");
 //
 //  Bind zccp server to specified endpoint. TCP endpoints may specify
 //  the port number as "*" to aquire an ephemeral port:
@@ -68,11 +68,11 @@ extern "C" {
 //
 //  This is the zccp_server constructor as a zactor_fn:
 //
-CZMQ_EXPORT void
+void
     zccp_server (zsock_t *pipe, void *args);
 
 //  Self test of this class
-CZMQ_EXPORT void
+void
     zccp_server_test (bool verbose);
 //  @end
 

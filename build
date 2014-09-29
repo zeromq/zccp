@@ -1,9 +1,9 @@
-# Generate code from the models
-# gsl -q -trace:1 *.xml
-gsl -q zccp_msg.xml
+#   Generate code from the models
+gsl -q -script:zproto_codec_c.gsl    zccp_msg.xml
 gsl -q -script:zproto_codec_java.gsl zccp_msg.xml
-gsl -q -script:zproto_codec_go.gsl zccp_msg.xml
+gsl -q -script:zproto_codec_go.gsl   zccp_msg.xml
 gsl -q zccp_server.xml
+gsl -q zccp_client.xml
 
 #   Build broker
 gcc -o zccpd zccpd.c zccp_msg.c zccp_server.c -lczmq -lzmq -g
@@ -12,6 +12,9 @@ test $? -ne 0 && exit
 #   Build shell API
 gcc -o zccp_sh zccp_sh.c zccp_msg.c zccp_server.c zccp_client.c -lczmq -lzmq -g
 test $? -ne 0 && exit
+
+#   Build test client
+gcc -o zccp_test_client zccp_test_client.c zccp_msg.c zccp_client.c zccp_server.c -lczmq -lzmq -g
 
 #   Build selftest
 gcc -o zccp_selftest zccp_selftest.c zccp_msg.c zccp_server.c zccp_client.c -lczmq -lzmq -g

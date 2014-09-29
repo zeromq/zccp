@@ -9,8 +9,8 @@
     statements. DO NOT MAKE ANY CHANGES YOU WISH TO KEEP. The correct places
     for commits are:
 
-    * The XML model used for this code generation: zccp_msg.xml
-    * The code generation script that built this file: zproto_codec_c
+     * The XML model used for this code generation: zccp_msg.xml, or
+     * The code generation script that built this file: zproto_codec_c
     ************************************************************************
     =========================================================================
 */
@@ -31,19 +31,21 @@
         expression          string      Regular expression
         headers             dictionary  Subscription options
 
+    SUBSCRIBE_OK - Server confirms subscription.
+
     PUBLISH - Client publishes a message to the server
-        address             string      Destination routing key
+        address             string      Logical address
         headers             dictionary  Content header fields
         content             msg         Content, as multipart message
 
     DIRECT - Client sends a message to a specific client
-        address             string      Destination client identifier
+        address             string      Client identifier
         headers             dictionary  Content header fields
         content             msg         Content, as multipart message
 
     DELIVER - Server delivers a message to client
         sender              string      Originating client
-        address             string      Destination address
+        address             string      Message address
         headers             dictionary  Content header fields
         content             msg         Content, as multipart message
 
@@ -52,9 +54,9 @@
     GOODBYE_OK - Server confirms client signoff
         headers             dictionary  Session statistics
 
-    PING - Client or server pings the other party
+    PING - Server pings the client if there's no traffic
 
-    PING_OK - Reply to a PING
+    PING_OK - Client replies to a PING
 
     INVALID - Client sent a message that was not valid at this time
 */
@@ -63,14 +65,15 @@
 #define ZCCP_MSG_HELLO                      1
 #define ZCCP_MSG_HELLO_OK                   2
 #define ZCCP_MSG_SUBSCRIBE                  3
-#define ZCCP_MSG_PUBLISH                    4
-#define ZCCP_MSG_DIRECT                     5
-#define ZCCP_MSG_DELIVER                    6
-#define ZCCP_MSG_GOODBYE                    7
-#define ZCCP_MSG_GOODBYE_OK                 8
-#define ZCCP_MSG_PING                       9
-#define ZCCP_MSG_PING_OK                    10
-#define ZCCP_MSG_INVALID                    11
+#define ZCCP_MSG_SUBSCRIBE_OK               4
+#define ZCCP_MSG_PUBLISH                    5
+#define ZCCP_MSG_DIRECT                     6
+#define ZCCP_MSG_DELIVER                    7
+#define ZCCP_MSG_GOODBYE                    8
+#define ZCCP_MSG_GOODBYE_OK                 9
+#define ZCCP_MSG_PING                       10
+#define ZCCP_MSG_PING_OK                    11
+#define ZCCP_MSG_INVALID                    12
 
 #ifdef __cplusplus
 extern "C" {
@@ -133,6 +136,11 @@ zmsg_t *
     zccp_msg_encode_subscribe (
         const char *expression,
         zhash_t *headers);
+
+//  Encode the SUBSCRIBE_OK 
+zmsg_t *
+    zccp_msg_encode_subscribe_ok (
+);
 
 //  Encode the PUBLISH 
 zmsg_t *
@@ -201,6 +209,11 @@ int
     zccp_msg_send_subscribe (void *output,
         const char *expression,
         zhash_t *headers);
+    
+//  Send the SUBSCRIBE_OK to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+int
+    zccp_msg_send_subscribe_ok (void *output);
     
 //  Send the PUBLISH to the output in one step
 //  WARNING, this call will fail if output is of type ZMQ_ROUTER.

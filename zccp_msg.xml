@@ -1,19 +1,21 @@
 <class
     name = "zccp_msg"
     title = "ZeroMQ Command & Control Protocol"
-    header = "."
-    include = "czmq.h"
     script = "zproto_codec_c"
     signature = "10"
+    package_dir = "."
+    project_header = "czmq.h"
     >
     <grammar>
-    ZCCP = greeting traffic signoff
+    ZCCP = greeting ( traffic / heartbeat ) signoff
     
     greeting = C:HELLO S:HELLO-OK
     
     traffic = C:SUBSCRIBE / C:PUBLISH / C:DIRECT /
               S:DELIVER
-              
+
+    heartbeat = S:PING C:PING-OK
+    
     signoff = C:GOODBYE S:GOODBYE-OK
     </grammar>
     
@@ -34,16 +36,20 @@
         <field name = "headers" type = "dictionary">Subscription options</field>
     </message>
 
+    <message name = "SUBSCRIBE-OK">
+        Server confirms subscription.
+    </message>
+
     <message name = "PUBLISH">
         Client publishes a message to the server
-        <field name = "address" type = "string">Destination routing key</field>
+        <field name = "address" type = "string">Logical address</field>
         <field name = "headers" type = "dictionary">Content header fields</field>
         <field name = "content" type = "msg">Content, as multipart message</field>
     </message>
 
     <message name = "DIRECT">
         Client sends a message to a specific client
-        <field name = "address" type = "string">Destination client identifier</field>
+        <field name = "address" type = "string">Client identifier</field>
         <field name = "headers" type = "dictionary">Content header fields</field>
         <field name = "content" type = "msg">Content, as multipart message</field>
     </message>
@@ -51,7 +57,7 @@
     <message name = "DELIVER">
         Server delivers a message to client
         <field name = "sender" type = "string">Originating client</field>
-        <field name = "address" type = "string">Destination address</field>
+        <field name = "address" type = "string">Message address</field>
         <field name = "headers" type = "dictionary">Content header fields</field>
         <field name = "content" type = "msg">Content, as multipart message</field>
     </message>
@@ -66,11 +72,11 @@
     </message>
 
     <message name = "PING">
-        Client or server pings the other party
+        Server pings the client if there's no traffic
     </message>
 
     <message name = "PING-OK">
-        Reply to a PING
+        Client replies to a PING
     </message>
 
     <message name = "INVALID">
